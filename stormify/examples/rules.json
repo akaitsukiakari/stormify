@@ -1,0 +1,81 @@
+{
+  "stormify_rules": 1,
+  "rules": [
+    {
+      "name": "Emergencies, nationwide",
+      "tags_any": ["emergency"],
+      "scope": {"nationwide": true},
+      "action": "push",
+      "priority": 5,
+      "on_update": "any",
+      "on_cancel": true
+    },
+    {
+      "name": "Tornado warnings, nationwide",
+      "events": ["Tornado Warning"],
+      "scope": {"nationwide": true},
+      "action": "push",
+      "priority": 4,
+      "on_update": "significant",
+      "on_cancel": false
+    },
+    {
+      "name": "Tornado + severe thunderstorm watches, nationwide",
+      "events": ["Tornado Watch", "Severe Thunderstorm Watch"],
+      "scope": {"nationwide": true},
+      "action": "push",
+      "priority": 3,
+      "on_update": "new_only"
+    },
+    {
+      "name": "PDS / destructive severe thunderstorm warnings, nationwide",
+      "events": ["Severe Thunderstorm Warning"],
+      "scope": {"nationwide": true},
+      "filters": {"include_regex": ["PARTICULARLY DANGEROUS SITUATION", "\\bDESTRUCTIVE\\b"]},
+      "action": "push",
+      "priority": 4,
+      "on_update": "significant"
+    },
+    {
+      "name": "Giant hail (2\"+), nationwide",
+      "events": ["Severe Thunderstorm Warning"],
+      "scope": {"nationwide": true},
+      "min_hail_in": 2.0,
+      "action": "push",
+      "priority": 3,
+      "on_update": "significant"
+    },
+    {
+      "name": "All warnings, my offices",
+      "kinds": ["Warning"],
+      "scope": {"offices": ["BOU", "FWD", "LIX", "HGX", "LOT", "LWX"]},
+      "action": "push",
+      "priority": 4,
+      "on_update": "significant",
+      "on_cancel": false
+    },
+    {
+      "name": "Special weather statements, Boulder (skip small hail)",
+      "events": ["Special Weather Statement"],
+      "scope": {"offices": ["BOU"]},
+      "filters": {"exclude_regex": ["\\b(pea|penny|dime|nickel)\\s+size"]},
+      "action": "push",
+      "priority": 3,
+      "on_update": "new_only"
+    },
+    {
+      "name": "Tropical + tsunami warnings, nationwide",
+      "events": ["Hurricane Warning", "Tropical Storm Warning", "Storm Surge Warning", "Tsunami Warning"],
+      "scope": {"nationwide": true},
+      "action": "push",
+      "priority": 4,
+      "on_update": "significant"
+    },
+    {
+      "name": "Advisories, my offices (dashboard only)",
+      "kinds": ["Advisory"],
+      "scope": {"offices": ["BOU", "FWD", "LIX", "HGX", "LOT", "LWX"]},
+      "action": "log"
+    }
+  ]
+}

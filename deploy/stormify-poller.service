@@ -1,0 +1,16 @@
+[Unit]
+Description=Stormify alert poller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stormify
+Environment=STORMIFY_CONFIG=/etc/stormify/config.toml
+ExecStart=/opt/stormify/venv/bin/stormify poll
+Restart=always
+RestartSec=10
+# Keep memory in check on a 512 MB Pi Zero W.
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target

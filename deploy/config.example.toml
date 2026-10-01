@@ -1,0 +1,31 @@
+# Stormify configuration. Copy to /etc/stormify/config.toml (install.sh does this).
+
+[general]
+db_path = "/var/lib/stormify/stormify.db"
+
+# NWS requires a User-Agent with contact info so they can reach you if something misbehaves.
+user_agent = "(stormify, you@example.com)"
+
+# Seconds between polls of api.weather.gov. 60 is polite and plenty fast.
+poll_interval = 60
+
+# /api/health returns 503 (and Home Assistant should alert you) if no successful poll in this long.
+heartbeat_stale_seconds = 300
+
+# Outbreak safety valve: more pushes than this in one poll get logged instead,
+# with a single "N more alerts held back" summary notification.
+max_push_per_poll = 20
+
+# First run against an empty database archives current alerts without pushing them.
+quiet_first_run = true
+
+# Delete archived alerts older than this many days (0 = keep forever).
+keep_days = 0
+
+[web]
+host = "127.0.0.1"   # the Cloudflare tunnel connects locally; use 0.0.0.0 to reach it on your LAN
+port = 8080
+# Long random string; keeps you logged in across restarts. Generate with: openssl rand -hex 32
+secret_key = ""
+# Public dashboard URL (your DreamHost subdomain via Cloudflare Tunnel). Used for tap-to-open links.
+public_url = ""

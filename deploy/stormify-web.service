@@ -1,0 +1,15 @@
+[Unit]
+Description=Stormify dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stormify
+Environment=STORMIFY_CONFIG=/etc/stormify/config.toml
+ExecStart=/opt/stormify/venv/bin/stormify web
+Restart=always
+RestartSec=10
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target

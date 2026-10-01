@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stormify</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="bolt">⚡</span>Stormify</div>
+  <div class="health" id="health" title="Poller status"><span class="dot"></span><span id="health-text">checking…</span></div>
+  <div class="spacer"></div>
+  <button class="ghost" id="test-btn" title="Send a test notification">Test push</button>
+  <a class="ghost" href="/api/rules?download=1">Export rules</a>
+  <span class="muted">{{ user.name }}</span>
+  <a class="ghost" href="/logout">Sign out</a>
+</header>
+
+<section class="filters">
+  <select id="f-hours" title="Time range">
+    <option value="1">Last hour</option>
+    <option value="6">Last 6 h</option>
+    <option value="24" selected>Last 24 h</option>
+    <option value="72">Last 3 days</option>
+    <option value="168">Last 7 days</option>
+    <option value="0">All time</option>
+  </select>
+  <select id="f-action" title="Delivery">
+    <option value="">Pushed + logged</option>
+    <option value="push">Pushed only</option>
+    <option value="log">Logged only</option>
+  </select>
+  <div class="chips" id="f-kinds"></div>
+  <input id="f-office" list="dl-offices" placeholder="Offices (BOU, FWD…)" autocomplete="off">
+  <input id="f-event" list="dl-events" placeholder="Event type" autocomplete="off">
+  <input id="f-q" type="search" placeholder="Search text (PDS, hail…)">
+  <label class="check"><input type="checkbox" id="f-active">Active only</label>
+  <datalist id="dl-offices"></datalist>
+  <datalist id="dl-events"></datalist>
+</section>
+
+<main class="layout">
+  <div id="map"></div>
+  <div class="feed">
+    <div class="feed-head"><span id="count">Loading…</span><span class="muted small" id="updated"></span></div>
+    <div id="list"></div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
