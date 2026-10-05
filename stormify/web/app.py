@@ -67,7 +67,7 @@ def create_app(cfg: Config, db: Database) -> Flask:
     @app.route("/")
     @login_required
     def feed(user):
-        return render_template("feed.html", user=user, version=__version__)
+        return render_template("feed.html", user=user, version=__version__, map_key=cfg.map_key)
 
     # ---- health (no login: Home Assistant polls this) ---------------------
     @app.route("/api/health")

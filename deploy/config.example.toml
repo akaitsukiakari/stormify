@@ -29,3 +29,6 @@ port = 8080
 secret_key = ""
 # Public dashboard URL (your DreamHost subdomain via Cloudflare Tunnel). Used for tap-to-open links.
 public_url = ""
+# Free CARTO basemaps key for the dark map (request one at https://carto.com/basemaps/apikey/).
+# Leave empty to use standard OpenStreetMap tiles instead.
+map_key = ""
