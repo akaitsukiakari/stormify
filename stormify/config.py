@@ -32,6 +32,8 @@ class Config:
     secret_key: str = ""
     # Base URL of the dashboard, used for click-through links in notifications.
     public_url: str = ""
+    # CARTO basemaps key (free at https://carto.com/basemaps/apikey/). Without it the map uses plain OpenStreetMap tiles.
+    map_key: str = ""
     extra: dict = field(default_factory=dict)
 
 

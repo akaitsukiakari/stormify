@@ -42,10 +42,17 @@
 
   // ---- map ----------------------------------------------------------------
   const map = L.map("map", { zoomControl: true, preferCanvas: true }).setView([39, -97], 4);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: "abcd", maxZoom: 19,
-  }).addTo(map);
+  // CARTO's dark tiles need a free key; without one, fall back to standard OpenStreetMap tiles.
+  const mapKey = document.body.dataset.mapKey;
+  const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  if (mapKey) {
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(mapKey)}`, {
+      attribution: OSM_ATTR + ' &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd", maxZoom: 19,
+    }).addTo(map);
+  } else {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: OSM_ATTR, maxZoom: 19 }).addTo(map);
+  }
   const polyGroup = L.featureGroup().addTo(map);
   window.stormify = { map };  // handy for debugging from the console
 

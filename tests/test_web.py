@@ -73,3 +73,10 @@ def test_settings_masks_token(client):
     s = r.json["settings"]
     assert s["channels"]["ntfy"]["token"] == "********"
     assert s["time_display"] == ["zulu"]
+
+
+def test_map_key_reaches_dashboard(client, cfg):
+    login(client)
+    assert b'data-map-key=""' in client.get("/").data
+    cfg.map_key = "abc123"
+    assert b'data-map-key="abc123"' in client.get("/").data
