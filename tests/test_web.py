@@ -80,3 +80,9 @@ def test_map_key_reaches_dashboard(client, cfg):
     assert b'data-map-key=""' in client.get("/").data
     cfg.map_key = "abc123"
     assert b'data-map-key="abc123"' in client.get("/").data
+
+
+def test_favicon_served_and_linked(client):
+    assert b"favicon.svg" in client.get("/login").data
+    r = client.get("/static/favicon.svg")
+    assert r.status_code == 200 and b"<svg" in r.data
