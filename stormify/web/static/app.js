@@ -22,9 +22,9 @@
   };
   const KIND_COLORS = {
     Emergency: "#ff2e63", Warning: "#ff6b3d", Watch: "#ffd23f", Advisory: "#5eb3ff",
-    Statement: "#b4a7ff", Outlook: "#7fd4c1", Message: "#8b94a5", Other: "#8b94a5",
+    Statement: "#b4a7ff", Outlook: "#7fd4c1", Message: "#8b94a5", Product: "#c9b88a", Other: "#8b94a5",
   };
-  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook"];
+  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Product"];
   const TAG_LABELS = {
     emergency: "EMERGENCY", pds: "PDS", considerable: "CONSIDERABLE", destructive: "DESTRUCTIVE",
     observed: "OBSERVED", "tornado-possible": "TOR POSSIBLE", test: "TEST",
