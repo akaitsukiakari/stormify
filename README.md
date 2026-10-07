@@ -8,6 +8,7 @@ It's built to run on a Raspberry Pi Zero W.
 
 - **NWS alerts, nationwide.** Polls `api.weather.gov/alerts/active` every 60 s (politely, with `If-Modified-Since`). That feed includes local-office warnings and watches, SPC watches as issued by offices, NHC tropical warnings, and tsunami products.
 - **National Hurricane Center products.** Polls NHC's Atlantic, Eastern Pacific and Central Pacific feeds every 60 s (conditional requests): public advisories (including intermediates), tropical cyclone updates, forecast advisories, discussions, wind speed probabilities, and tropical weather outlooks. Each storm shows on the map at its current center with NHC's forecast track. Advisories are tagged with the watches/warnings in effect, so a rule can push on "significant" changes: stronger winds, or a new watch/warning type. Add the bundled tropical rules with `stormify rules add --user NAME --example tropical`.
+- **NWS text products** (optional). Area Forecast Discussions, Hazardous Weather Outlooks, Record Event Reports, Public Information Statements, Local Storm Reports, or any AWIPS product code, for the offices you list under `[nws_products]` in the config. They show on the dashboard under the Product chip and push only if a rule asks for `"kinds": ["Product"]`.
 - **Rules per user.** Match by event names, tiers, derived tags (emergency, PDS, considerable, destructive, observed), and scope (nationwide / offices / zones / states / FIPS). Filters support include-any (OR), include-all (AND), excludes, regex, and case sensitivity, plus hail and wind thresholds. Each rule pushes or just logs. See [docs/rules.md](docs/rules.md).
 - **Smart updates.** NWS updates are grouped by VTEC event. Each rule chooses `new_only`, `significant`, or `any`, and can opt into cancellation notices. If an original and its update arrive in the same poll, you get one notification.
 - **Outbreak safety valve.** A per-poll push cap; anything over it is logged, with one summary push. The first run pushes nothing.
@@ -19,7 +20,7 @@ It's built to run on a Raspberry Pi Zero W.
 
 ## Not built yet
 
-Rule editor UI (bulk assign, copy scopes, presets), saved dashboard views, zone polygons for alerts without their own geometry, polygon images in notifications, SPC outlooks/MDs, SWPC space weather, NWS text products (PNS, HWO, AFD), hail alerting from radar/mPING, GPS location, nightly config backup to DreamHost.
+Rule editor UI (bulk assign, copy scopes, presets), saved dashboard views, zone polygons for alerts without their own geometry, polygon images in notifications, SPC outlooks/MDs, SWPC space weather, hail alerting from radar/mPING, GPS location, nightly config backup to DreamHost.
 
 ## Quick start (development)
 
@@ -43,6 +44,7 @@ See [docs/setup-pi.md](docs/setup-pi.md) and [docs/ntfy.md](docs/ntfy.md).
 stormify/
   sources/nws.py     NWS feed → Alert objects (office, VTEC thread, tags, hail/wind)
   sources/nhc.py     NHC RSS feeds → Alert objects (storm vitals, watches, track)
+  sources/nws_products.py  NWS text products (AFD, HWO, RER, ...) → Alert objects
   rules.py           rule model + matching
   engine.py          archive, decide, handle updates/cancels, cap, deliver
   delivery/          Channel interface + ntfy adapter

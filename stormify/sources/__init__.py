@@ -3,5 +3,6 @@
 from .base import Source
 from .nhc import NHCSource
 from .nws import NWSAlertsSource
+from .nws_products import NWSProductsSource
 
-__all__ = ["Source", "NWSAlertsSource", "NHCSource"]
+__all__ = ["Source", "NWSAlertsSource", "NWSProductsSource", "NHCSource"]

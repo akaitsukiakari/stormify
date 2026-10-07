@@ -16,7 +16,7 @@ Variables:
 NHC products add: storm (e.g. "Tropical Storm Isaias", or the basin for an
 outlook), product ("Advisory 4A"), adv, basin, pressure, movement, location,
 watches (watches/warnings in effect), storm_stats ("45 mph · 1000 mb · ENE at 8 mph").
-Text products have their own defaults (NHC_TITLE / NHC_BODY).
+They have their own defaults (NHC_TITLE / NHC_BODY).
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ from .timefmt import fmt_event, fmt_local, fmt_multi, fmt_zulu, parse_iso
 
 DEFAULT_TITLE = "{status_prefix}{tags_prefix}{event} · {office}"
 DEFAULT_BODY = "{threat}{area_short}\nUntil {expires}\n{nws_headline}"
+# Text products (AFD, HWO, ...) have no area or expiry.
+PRODUCT_BODY = "{headline}\nIssued {sent}"
 NHC_TITLE = "{storm} · {product}"
 NHC_BODY = "{storm_stats}\n{watches}\n{nws_headline}"
 SOURCE_DEFAULTS = {"nhc": (NHC_TITLE, NHC_BODY)}

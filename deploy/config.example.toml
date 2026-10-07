@@ -38,3 +38,12 @@ public_url = ""
 # Free CARTO basemaps key for the dark map (request one at https://carto.com/basemaps/apikey/).
 # Leave empty to use standard OpenStreetMap tiles instead.
 map_key = ""
+
+# NWS text products (Area Forecast Discussion, Hazardous Weather Outlook, Record Event
+# Report, ...). These aren't alerts, so the alerts feed never carries them. They land on
+# the dashboard under the "Product" chip; add a rule with "kinds": ["Product"] to push them.
+# Leave offices empty to turn this off.
+[nws_products]
+offices = []                                  # e.g. ["BOU"]
+types = ["AFD", "HWO", "RER", "PNS", "LSR"]   # AWIPS product codes
+poll_interval = 300                           # seconds; products change slowly

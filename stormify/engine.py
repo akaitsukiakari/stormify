@@ -12,7 +12,7 @@ from .db import Database, utcnow
 from .delivery import Channel, DeliveryError, Notification, channels_for_user
 from .models import SIGNIFICANT_TAGS, Alert
 from .rules import Rule, RuleError, evaluate, load_rules
-from .templates import DEFAULT_BODY, DEFAULT_TITLE, SOURCE_DEFAULTS, build_vars, render
+from .templates import DEFAULT_BODY, DEFAULT_TITLE, PRODUCT_BODY, SOURCE_DEFAULTS, build_vars, render
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +87,8 @@ class Engine:
         settings = user.get("settings", {})
         v = build_vars(a, settings.get("timezone", "America/Denver"), settings.get("time_display"), status)
         default_title, default_body = SOURCE_DEFAULTS.get(a.source, (DEFAULT_TITLE, DEFAULT_BODY))
+        if a.kind == "Product" and a.source not in SOURCE_DEFAULTS:
+            default_body = PRODUCT_BODY
         title = render((rule.title_template if rule else None) or default_title, v)
         body = render((rule.body_template if rule else None) or default_body, v)
         if "emergency" in a.tag_set:

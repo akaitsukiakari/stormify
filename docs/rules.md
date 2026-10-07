@@ -16,7 +16,7 @@ If several push rules match, the highest `priority` wins, along with that rule's
 | `name` | Label shown in the feed ("matched …") |
 | `enabled` | `true`/`false` |
 | `events` | Exact event names, case-insensitive. Empty = any. e.g. `["Tornado Warning", "Tornado Watch"]`. NHC products are listed [below](#national-hurricane-center-products). |
-| `kinds` | Tiers: `Emergency`, `Warning`, `Watch`, `Advisory`, `Statement`, `Outlook`, `Message`, `Other`. An emergency also counts as a Warning. |
+| `kinds` | Tiers: `Emergency`, `Warning`, `Watch`, `Advisory`, `Statement`, `Outlook`, `Message`, `Product`, `Other`. An emergency also counts as a Warning. `Product` is an NWS text product (AFD, HWO, RER, ...); scope those by `offices`, since they carry no zones. |
 | `tags_any` | Derived tags, at least one required: `emergency`, `pds`, `considerable`, `destructive`, `observed`, `tornado-possible`, plus the NHC tags below |
 | `scope` | `{"nationwide": true}`, or any mix of `offices` (`"BOU"` or `"KBOU"`), `zones` (UGC like `COZ039`, `COC005`), `states` (`"CO"`), `same` (FIPS like `"008005"`) |
 | `filters.include_any` | At least one of these phrases must appear (OR) |
@@ -48,6 +48,13 @@ Every special weather statement from Boulder except small hail:
 ```json
 {"name": "BOU SPS", "events": ["Special Weather Statement"], "scope": {"offices": ["BOU"]},
  "filters": {"exclude_regex": ["\\b(pea|penny|dime|nickel)\\s+size"]}}
+```
+
+Boulder's Hazardous Weather Outlooks and Record Event Reports (needs `[nws_products]` in the config; event names are as shown in the dashboard's Event box):
+
+```json
+{"name": "BOU HWO + RER", "kinds": ["Product"], "events": ["Hazardous Weather Outlook", "Record Event Report"],
+ "scope": {"offices": ["BOU"]}, "priority": 2}
 ```
 
 ## National Hurricane Center products
@@ -90,6 +97,7 @@ Defaults:
 
 - title: `{status_prefix}{tags_prefix}{event} · {office}`, e.g. `UPDATE PDS Tornado Warning · BOU`
 - body: `{threat}{area_short}` / `Until {expires}` / `{nws_headline}`
+- body for text products: `{headline}` / `Issued {sent}`
 
 Variables: `event kind office sender area area_short headline nws_headline severity certainty urgency tags tags_prefix hail hail_short wind wind_short threat status_prefix first_line sent expires sent_local sent_event sent_z expires_local expires_event expires_z`
 

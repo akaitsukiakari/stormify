@@ -10,7 +10,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 # Product "kinds" (tiers), derived from the event name.
-KINDS = ("Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Message", "Other")
+# "Product" is set directly on NWS text products (AFD, HWO, ...), never derived from an event name.
+KINDS = ("Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Message", "Product", "Other")
 
 SEVERITY_RANK = {"Unknown": 0, "Minor": 1, "Moderate": 2, "Severe": 3, "Extreme": 4}
 

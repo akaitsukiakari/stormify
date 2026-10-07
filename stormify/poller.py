@@ -11,7 +11,8 @@ import requests
 from .config import Config
 from .db import Database, utcnow
 from .engine import Engine
-from .sources import NHCSource, NWSAlertsSource, Source
+from .sources import NHCSource, NWSAlertsSource, NWSProductsSource, Source
+from .sources.nws_products import DEFAULT_TYPES
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +25,10 @@ class Poller:
         self.nws = NWSAlertsSource(cfg.nws_base_url, cfg.user_agent)
         if sources is None:
             sources = [self.nws]
+            if cfg.products_locations:
+                sources.append(NWSProductsSource(
+                    cfg.nws_base_url, cfg.user_agent, cfg.products_locations,
+                    cfg.products_types or DEFAULT_TYPES, cfg.products_interval, known_ids=db.known_alert_ids))
             if cfg.nhc_enabled:
                 sources.append(NHCSource(cfg.nhc_base_url, cfg.user_agent, cfg.nhc_basins))
         self.sources = sources
