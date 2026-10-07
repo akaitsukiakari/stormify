@@ -22,6 +22,12 @@ quiet_first_run = true
 # Delete archived alerts older than this many days (0 = keep forever).
 keep_days = 0
 
+# National Hurricane Center products: public advisories, updates, forecast advisories,
+# discussions, wind speed probabilities, and tropical weather outlooks.
+# Basins: at = Atlantic, ep = Eastern Pacific, cp = Central Pacific.
+nhc_enabled = true
+nhc_basins = ["at", "ep", "cp"]
+
 [web]
 host = "127.0.0.1"   # the Cloudflare tunnel connects locally; use 0.0.0.0 to reach it on your LAN
 port = 8080

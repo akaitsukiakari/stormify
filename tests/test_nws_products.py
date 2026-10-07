@@ -144,4 +144,4 @@ def test_config_and_poller_wiring(tmp_path):
 
 def test_products_off_by_default(tmp_path, cfg):
     from stormify.db import Database
-    assert [s.name for s in Poller(cfg, Database(cfg.db_path)).sources] == ["nws"]
+    assert "nws-products" not in [s.name for s in Poller(cfg, Database(cfg.db_path)).sources]

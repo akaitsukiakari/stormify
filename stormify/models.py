@@ -1,6 +1,6 @@
 """Source-independent alert model.
 
-Every source (NWS alerts today; SPC, NHC, SWPC later) produces Alert objects,
+Every source (NWS alerts and NHC products today; SPC, SWPC later) produces Alert objects,
 and everything downstream (rules, storage, delivery, dashboard) only sees these.
 """
 
@@ -15,8 +15,11 @@ KINDS = ("Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "M
 
 SEVERITY_RANK = {"Unknown": 0, "Minor": 1, "Moderate": 2, "Severe": 3, "Extreme": 4}
 
-# Tags that make an update "significant" when they newly appear.
-SIGNIFICANT_TAGS = {"emergency", "pds", "considerable", "destructive", "observed"}
+# Tags that make an update "significant" when they newly appear. The NHC ones
+# are watches/warnings in effect in a public advisory, and the major-hurricane class.
+SIGNIFICANT_TAGS = {"emergency", "pds", "considerable", "destructive", "observed",
+                    "hurricane-warning", "hurricane-watch", "ts-warning", "ts-watch",
+                    "surge-warning", "surge-watch", "major-hurricane"}
 
 
 def kind_for_event(event: str, tags: set[str] | None = None) -> str:

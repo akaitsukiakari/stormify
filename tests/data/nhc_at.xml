@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:georss="http://www.georss.org/georss"
+  xmlns:gml="http://www.opengis.net/gml" xmlns:nhc="https://www.nhc.noaa.gov">
+  <channel>
+    <pubDate>Wed, 07 Oct 2026 14:55:22 GMT</pubDate>
+    <title>NHC Atlantic</title>
+    <link>https://www.nhc.noaa.gov/</link>
+    <item>
+      <title>Atlantic Tropical Weather Outlook</title>
+      <description>
+      <![CDATA[000<br />ABNT20 KNHC 071136<br />TWOAT <br /><br />Tropical Weather Outlook<br />NWS National Hurricane Center Miami FL<br />800 AM EDT Wed Oct 7 2026<br /><br />For the North Atlantic...Caribbean Sea and the Gulf of America:<br /><br />Active Systems:<br />The National Hurricane Center is issuing advisories on recently <br />upgraded Tropical Storm Isaias, located in the southwestern Gulf of <br />America.<br /><br />Tropical cyclone formation is not expected during the next 7 days.<br /><br />&&<br />$$<br />Forecaster Pasch]]>
+      </description>
+      <pubDate>Wed, 07 Oct 2026 11:37:01 GMT</pubDate>
+      <link>https://www.nhc.noaa.gov/gtwo.php?basin=atlc</link>
+      <guid>https://www.nhc.noaa.gov/gtwo.php?basin=atlc&amp;202610071137</guid>
+    </item>
+    <item>
+      <title>Summary for Tropical Storm Isaias (AT4/AL092026)</title>
+      <guid isPermaLink="false">summary-al092026-202610071453</guid>
+      <pubDate>Wed, 07 Oct 2026 14:53:10 GMT</pubDate>
+      <link>https://www.nhc.noaa.gov/text/refresh/MIATCPAT4+shtml/071453.shtml</link>
+      <description>...HURRICANE AND STORM SURGE WATCHES ISSUED FOR PORTIONS OF THE NORTHERN GULF COAST FOR STRENGTHENING ISAIAS...</description>
+      <nhc:Cyclone>
+        <nhc:center>22.4, -93.6</nhc:center>
+        <nhc:type>Tropical Storm</nhc:type>
+        <nhc:name>Isaias</nhc:name>
+        <nhc:wallet>AT4</nhc:wallet>
+        <nhc:atcf>AL092026</nhc:atcf>
+        <nhc:datetime>10:00 AM CDT Wed Oct 07</nhc:datetime>
+        <nhc:movement>ENE at 8 mph</nhc:movement>
+        <nhc:pressure>1000 mb</nhc:pressure>
+        <nhc:wind>45 mph</nhc:wind>
+        <nhc:headline>...HURRICANE AND STORM SURGE WATCHES ISSUED FOR PORTIONS OF THE NORTHERN GULF COAST FOR STRENGTHENING ISAIAS...</nhc:headline>
+      </nhc:Cyclone>
+    </item>
+    <item>
+      <title>Tropical Storm Isaias Public Advisory Number 4</title>
+      <description>Issued at 1000 AM CDT Wed Oct 07 2026 <![CDATA[<pre>000
+WTNT34 KNHC 071453
+TCPAT4
+
+BULLETIN
+Tropical Storm Isaias Advisory Number   4
+NWS National Hurricane Center Miami FL       AL092026
+1000 AM CDT Wed Oct 07 2026
+
+...HURRICANE AND STORM SURGE WATCHES ISSUED FOR PORTIONS OF THE
+NORTHERN GULF COAST FOR STRENGTHENING ISAIAS...
+
+SUMMARY OF 1000 AM CDT...1500 UTC...INFORMATION
+-----------------------------------------------
+LOCATION...22.4N 93.6W
+ABOUT 260 MI...420 KM WNW OF PROGRESO MEXICO
+ABOUT 540 MI...870 KM SSW OF THE MOUTH OF THE MISSISSIPPI RIVER
+MAXIMUM SUSTAINED WINDS...45 MPH...75 KM/H
+PRESENT MOVEMENT...ENE OR 70 DEGREES AT 8 MPH...13 KM/H
+MINIMUM CENTRAL PRESSURE...1000 MB...29.53 INCHES
+
+WATCHES AND WARNINGS
+--------------------
+CHANGES WITH THIS ADVISORY:
+
+A Storm Surge Watch has been issued from the Mouth of the
+Mississippi River eastward to Yankeetown, Florida.
+
+A Hurricane Watch has been issued for the northern Gulf Coast from
+Bay St. Louis, Mississippi to Indian Pass, Florida.
+
+A Tropical Storm Watch has been issued for the northern Gulf Coast
+from the Jefferson/Plaquemines Parish line, Louisiana to west
+of Bay St. Louis, and from east of Indian Pass to Aucilla River,
+Florida.
+
+SUMMARY OF WATCHES AND WARNINGS IN EFFECT:
+
+A Storm Surge Watch is in effect for...
+* Mouth of the Mississippi River to Yankeetown
+
+A Hurricane Watch is in effect for...
+* Bay St. Louis to Indian Pass
+
+A Tropical Storm Watch is in effect for...
+* Jefferson/Plaquemines Parish line to west of Bay St. Louis
+* East of Indian Pass to Aucilla River
+
+A Storm Surge Watch means there is a possibility of life-
+threatening inundation, from rising water moving inland from the
+coastline, in the indicated locations during the next 48 hours.
+
+A Hurricane Watch means that hurricane conditions are possible
+within the watch area.
+
+A Tropical Storm Watch means that tropical storm conditions are
+possible within the watch area, generally within 48 hours.
+
+DISCUSSION AND OUTLOOK
+----------------------
+At 1000 AM CDT (1500 UTC), the center of Tropical Storm Isaias was
+located by an Air Force Reserve Hurricane Hunter aircraft near
+latitude 22.4 North, longitude 93.6 West. Isaias is moving toward
+the east-northeast near 8 mph (13 km/h).
+
+Maximum sustained winds have increased to near 45 mph (75 km/h)
+with higher gusts. Rapid strengthening is forecast over the next day
+or two, and Isaias is expected to become a hurricane by Thursday.
+
+HAZARDS AFFECTING LAND
+----------------------
+STORM SURGE:  The combination of a dangerous storm surge and the
+tide will cause normally dry areas near the coast to be flooded.
+
+Ocean Springs, MS to Indian Pass, FL...5-7 ft
+Mobile Bay...5-7 ft
+
+NEXT ADVISORY
+-------------
+Next intermediate advisory at 100 PM CDT.
+Next complete advisory at 400 PM CDT.
+
+$$
+Forecaster Blake</pre>]]></description>
+      <pubDate>Wed, 07 Oct 2026 14:53:10 GMT</pubDate>
+      <link>https://www.nhc.noaa.gov/text/refresh/MIATCPAT4+shtml/071453.shtml</link>
+      <guid>https://www.nhc.noaa.gov/text/refresh/MIATCPAT4+shtml/071453.shtml</guid>
+    </item>
+    <item>
+      <title>Tropical Storm Isaias Forecast Advisory Number 3</title>
+      <description>Issued at 0900 UTC WED OCT 07 2026 <![CDATA[<pre>000
+WTNT24 KNHC 070849
+TCMAT4
+
+TROPICAL STORM ISAIAS FORECAST/ADVISORY NUMBER   3
+NWS NATIONAL HURRICANE CENTER MIAMI FL       AL092026
+0900 UTC WED OCT 07 2026
+
+TROPICAL STORM CENTER LOCATED NEAR 22.0N  94.1W AT 07/0900Z
+POSITION ACCURATE WITHIN  30 NM
+
+ESTIMATED MINIMUM CENTRAL PRESSURE 1004 MB
+MAX SUSTAINED WINDS  35 KT WITH GUSTS TO  45 KT.
+
+NEXT ADVISORY AT 07/1500Z
+
+$$
+FORECASTER PAPIN</pre>]]></description>
+      <pubDate>Wed, 07 Oct 2026 08:49:58 GMT</pubDate>
+      <link>https://www.nhc.noaa.gov/text/refresh/MIATCMAT4+shtml/070849.shtml</link>
+      <guid>https://www.nhc.noaa.gov/text/refresh/MIATCMAT4+shtml/070849.shtml</guid>
+    </item>
+    <item>
+      <title>Tropical Storm Isaias Forecast Discussion Number 3</title>
+      <description>Issued at 400 AM CDT Wed Oct 07 2026 <![CDATA[<pre>000
+WTNT44 KNHC 070857
+TCDAT4
+
+Tropical Storm Isaias Discussion Number   3
+NWS National Hurricane Center Miami FL       AL092026
+400 AM CDT Wed Oct 07 2026
+
+Satellite imagery depicts a bursting pattern with the tropical
+cyclone this morning, with cloud top temperatures below -85 C in the
+deep convection close to the estimated center.
+
+Key Messages:
+
+1. There is an increasing risk of dangerous wind and storm surge
+impacts along portions of the northern Gulf Coast.
+
+FORECAST POSITIONS AND MAX WINDS
+
+INIT  07/0900Z 22.0N  94.1W   35 KT  40 MPH
+ 12H  07/1800Z 22.2N  92.9W   50 KT  60 MPH
+ 24H  08/0600Z 22.7N  91.4W   65 KT  75 MPH
+ 36H  08/1800Z 23.9N  89.7W   80 KT  90 MPH
+ 48H  09/0600Z 25.5N  88.5W   95 KT 110 MPH
+ 60H  09/1800Z 27.7N  87.7W   90 KT 105 MPH
+ 72H  10/0600Z 30.8N  87.7W   75 KT  85 MPH...INLAND
+ 96H  11/0600Z 38.2N  87.5W   25 KT  30 MPH...POST-TROP/INLAND
+120H  12/0600Z...DISSIPATED
+
+$$
+Forecaster Papin</pre>]]></description>
+      <pubDate>Wed, 07 Oct 2026 08:57:59 GMT</pubDate>
+      <link>https://www.nhc.noaa.gov/text/refresh/MIATCDAT4+shtml/070857.shtml</link>
+      <guid>https://www.nhc.noaa.gov/text/refresh/MIATCDAT4+shtml/070857.shtml</guid>
+    </item>
+    <item>
+      <title>Tropical Storm Isaias Graphics</title>
+      <description><![CDATA[<br /><a href="https://www.nhc.noaa.gov/refresh/graphics_at4+shtml/112934.shtml?tswind120"><img src="x.png" /></a>]]></description>
+      <pubDate>Wed, 07 Oct 2026 11:29:34 GMT</pubDate>
+      <link>https://www.nhc.noaa.gov/refresh/graphics_at4+shtml/112934.shtml?cone</link>
+      <guid>https://www.nhc.noaa.gov/refresh/graphics_at4+shtml/112934.shtml?cone</guid>
+    </item>
+  </channel>
+</rss>

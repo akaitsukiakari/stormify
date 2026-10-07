@@ -12,6 +12,11 @@ Variables:
   wind_short, threat, status_prefix (UPDATE/CANCELLED/TEST), first_line,
   sent, expires (multi-format per your time display setting),
   sent_local, sent_event, sent_z, expires_local, expires_event, expires_z
+
+NHC products add: storm (e.g. "Tropical Storm Isaias", or the basin for an
+outlook), product ("Advisory 4A"), adv, basin, pressure, movement, location,
+watches (watches/warnings in effect), storm_stats ("45 mph · 1000 mb · ENE at 8 mph").
+They have their own defaults (NHC_TITLE / NHC_BODY).
 """
 
 from __future__ import annotations
@@ -25,6 +30,10 @@ DEFAULT_TITLE = "{status_prefix}{tags_prefix}{event} · {office}"
 DEFAULT_BODY = "{threat}{area_short}\nUntil {expires}\n{nws_headline}"
 # Text products (AFD, HWO, ...) have no area or expiry.
 PRODUCT_BODY = "{headline}\nIssued {sent}"
+NHC_TITLE = "{storm} · {product}"
+NHC_BODY = "{storm_stats}\n{watches}\n{nws_headline}"
+SOURCE_DEFAULTS = {"nhc": (NHC_TITLE, NHC_BODY)}
+NHC_VARS = ("storm", "product", "adv", "basin", "pressure", "movement", "location", "watches", "storm_stats")
 
 TAG_LABELS = {
     "emergency": "EMERGENCY",
@@ -99,6 +108,8 @@ def build_vars(a: Alert, user_tz: str = "America/Denver", display: list[str] | N
         "status_prefix": f"{status} " if status else "",
         "first_line": (a.description.strip().splitlines() or [""])[0],
     }
+    for name in NHC_VARS:
+        v[name] = str(a.params.get(name, "")) if a.source == "nhc" else ""
     for name in ("sent", "expires"):
         iso = getattr(a, name) or ""
         dt = parse_iso(iso)
