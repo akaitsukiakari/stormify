@@ -64,6 +64,24 @@
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: OSM_ATTR, maxZoom: 19 }).addTo(map);
   }
   const polyGroup = L.featureGroup().addTo(map);
+
+  // ---- legend: what's drawn in the current view, so screenshots explain themselves ----
+  const Legend = L.Control.extend({
+    options: { position: "bottomleft" },
+    onAdd() {
+      const el = L.DomUtil.create("div", "legend");
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+      el.addEventListener("click", (e) => {
+        if (!e.target.closest(".legend-head")) return;
+        el.classList.toggle("collapsed");
+        try { localStorage.setItem("legendCollapsed", el.classList.contains("collapsed") ? "1" : ""); } catch { /* ignore */ }
+      });
+      try { if (localStorage.getItem("legendCollapsed")) el.classList.add("collapsed"); } catch { /* ignore */ }
+      return el;
+    },
+  });
+  const legend = new Legend().addTo(map);
   window.stormify = { map };  // handy for debugging from the console
 
   // ---- time formatting: your local / event local / Zulu -----------------------
@@ -165,6 +183,7 @@
     layers.clear();
     const list = $("list");
     if (!alerts.length) {
+      renderLegend();
       list.innerHTML = `<div class="empty">Nothing here for these filters.<br>Quiet skies, or widen the time range.</div>`;
       return;
     }
@@ -183,6 +202,7 @@
       layer.addTo(polyGroup);
       layers.set(a.id, layer);
     });
+    renderLegend();
 
     list.innerHTML = alerts.map((a) => {
       const tags = (a.tags || []).filter((t) => TAG_LABELS[t]).map((t) => `<span class="badge tag">${TAG_LABELS[t]}</span>`).join("");
@@ -206,6 +226,49 @@
     } else if (polyGroup.getLayers().length && !map._userMoved) {
       map.fitBounds(polyGroup.getBounds(), { maxZoom: 7, padding: [20, 20] });
     }
+  }
+
+  function swatch(e) {
+    if (e.storm) {
+      return `<svg viewBox="0 0 28 14" width="28" height="14"><line x1="7" y1="7" x2="27" y2="7" stroke="${e.color}" stroke-width="2.5"/>`
+        + `<circle cx="7" cy="7" r="5" fill="${e.color}" fill-opacity="0.7" stroke="${e.color}" stroke-width="2"/></svg>`;
+    }
+    const watch = e.kind === "Watch";
+    return `<svg viewBox="0 0 28 14" width="28" height="14"><rect x="1.5" y="1.5" width="25" height="11" rx="2" fill="${e.color}" `
+      + `fill-opacity="${watch ? 0.15 : 0.35}" stroke="${e.color}" stroke-width="${watch ? 1.5 : 2.5}"/></svg>`;
+  }
+
+  // One row per distinct thing drawn inside the current view, most severe first.
+  function renderLegend() {
+    const el = legend.getContainer();
+    const view = map.getBounds();
+    const rank = { Emergency: 0, Warning: 1, Advisory: 2, Statement: 2, Watch: 3 };
+    const rows = new Map();
+    for (const a of alerts) {
+      const layer = layers.get(a.id);
+      if (!layer || !layer.getBounds().isValid() || !view.intersects(layer.getBounds())) continue;
+      const storm = a.source === "nhc" ? ((a.params || {}).storm || a.event) : "";
+      const emergency = (a.tags || []).includes("emergency");
+      const key = storm ? "nhc:" + storm : a.event + (emergency ? ":emergency" : "");
+      const row = rows.get(key);
+      if (row) { row.n += 1; continue; }
+      rows.set(key, {
+        storm, kind: a.kind, color: colorFor(a), n: 1,
+        label: storm || (emergency && !/emergency/i.test(a.event) ? `${a.event} (emergency)` : a.event),
+        rank: emergency ? -1 : (rank[a.kind] ?? 2),
+      });
+    }
+    if (!rows.size) { el.hidden = true; return; }
+    el.hidden = false;
+    const items = [...rows.values()].sort((x, y) => (x.storm ? 0 : 1) - (y.storm ? 0 : 1) || x.rank - y.rank || x.label.localeCompare(y.label));
+    const hasStorm = items.some((e) => e.storm);
+    const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: meta.timezone, timeZoneName: "short" });
+    el.innerHTML = `<div class="legend-head"><span>Legend</span><span class="legend-toggle" aria-hidden="true"></span></div>
+      <div class="legend-body">
+        ${items.map((e) => `<div class="legend-row">${swatch(e)}<span>${esc(e.label)}${e.n > 1 ? ` <span class="muted">×${e.n}</span>` : ""}</span></div>`).join("")}
+        ${hasStorm ? `<div class="legend-note">Dot: storm center · line: forecast track</div>` : ""}
+        <div class="legend-note">Stormify · ${esc(now)}</div>
+      </div>`;
   }
 
   function select(id, toggle = true) {
@@ -244,6 +307,7 @@
     const card = e.target.closest(".card");
     if (card && !window.getSelection().toString()) select(card.dataset.id);
   });
+  map.on("moveend", renderLegend);
   // Stop auto-fitting once you've panned or zoomed the map yourself.
   ["mousedown", "wheel", "touchstart"].forEach((ev) => $("map").addEventListener(ev, () => { map._userMoved = true; }, { passive: true }));
   $("test-btn").addEventListener("click", async () => {
