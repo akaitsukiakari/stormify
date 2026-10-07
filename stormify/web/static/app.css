@@ -54,7 +54,9 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #04111f; font-weight: 600; }
 .check { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 
-.layout { display: grid; grid-template-columns: 1fr 460px; height: calc(100vh - 112px); min-height: 400px; }
+/* Map + feed fill whatever height is left under the header and filters, however much they wrap. */
+body.dash { display: flex; flex-direction: column; }
+.layout { display: grid; grid-template-columns: 1fr 460px; grid-template-rows: minmax(0, 1fr); flex: 1 1 0; min-height: 400px; }
 #map { height: 100%; background: #0e1218; }
 .feed { overflow-y: auto; border-left: 1px solid var(--line); background: var(--bg); }
 .feed-head {
@@ -105,8 +107,26 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 }
 
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; grid-template-rows: 42vh auto; height: auto; }
+  .layout { grid-template-columns: 1fr; grid-template-rows: 42vh auto; flex: none; }
   .feed { border-left: none; border-top: 1px solid var(--line); overflow: visible; }
   .filters input { min-width: 0; flex: 1 1 140px; }
   .topbar { padding: 10px 16px; }
 }
+
+.legend {
+  background: rgba(18, 22, 29, 0.92); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); font-size: 12px; max-width: 260px; max-height: 45vh; overflow-y: auto;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+.legend[hidden] { display: none; }
+.legend-head {
+  display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px;
+  font-weight: 700; cursor: pointer; user-select: none;
+}
+.legend-toggle::after { content: "▾"; color: var(--muted); }
+.legend.collapsed .legend-toggle::after { content: "▸"; }
+.legend.collapsed .legend-body { display: none; }
+.legend-body { padding: 0 10px 8px; display: flex; flex-direction: column; gap: 5px; }
+.legend-row { display: flex; align-items: center; gap: 8px; line-height: 1.25; }
+.legend-row svg { flex: none; }
+.legend-note { color: var(--muted); font-size: 11px; margin-top: 2px; }
