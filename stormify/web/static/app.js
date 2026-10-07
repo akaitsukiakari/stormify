@@ -19,6 +19,12 @@
     "Blizzard Warning": "#ff4500",
     "Red Flag Warning": "#ff1493",
     "Tsunami Warning": "#fd6347",
+    "Hurricane Watch": "#ff00ff",
+    "Tropical Storm Watch": "#f08080",
+    "Storm Surge Warning": "#b524f7",
+    "Storm Surge Watch": "#db7ff7",
+    "Tropical Cyclone Public Advisory": "#ff4fa3",
+    "Tropical Cyclone Update": "#ff4fa3",
   };
   const KIND_COLORS = {
     Emergency: "#ff2e63", Warning: "#ff6b3d", Watch: "#ffd23f", Advisory: "#5eb3ff",
@@ -28,7 +34,11 @@
   const TAG_LABELS = {
     emergency: "EMERGENCY", pds: "PDS", considerable: "CONSIDERABLE", destructive: "DESTRUCTIVE",
     observed: "OBSERVED", "tornado-possible": "TOR POSSIBLE", test: "TEST",
+    "major-hurricane": "MAJOR", "hurricane-warning": "HU WARNING", "surge-warning": "SURGE WARNING",
+    "ts-warning": "TS WARNING", "hurricane-watch": "HU WATCH", "surge-watch": "SURGE WATCH", "ts-watch": "TS WATCH",
   };
+  // NHC products read better by their own title ("Tropical Storm Isaias Public Advisory Number 4").
+  const labelFor = (a) => (a.source === "nhc" && a.headline) ? a.headline : a.event;
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -165,9 +175,11 @@
       const c = colorFor(a);
       const layer = L.geoJSON(a.geometry, {
         style: { color: c, weight: a.kind === "Watch" ? 1.5 : 2.5, fillColor: c, fillOpacity: a.kind === "Watch" ? 0.08 : 0.22 },
+        // Storm centers (NHC advisories) are points; their forecast track is a line.
+        pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
       });
       layer.on("click", () => select(a.id, false));
-      layer.bindTooltip(`${esc(a.event)} · ${esc(a.office)}`, { sticky: true });
+      layer.bindTooltip(`${esc(labelFor(a))} · ${esc(a.office)}`, { sticky: true });
       layer.addTo(polyGroup);
       layers.set(a.id, layer);
     });
@@ -181,7 +193,7 @@
       const exp = fmtTimes(a.expires || a.ends, a.event_tz);
       const body = [a.nws_headline, a.description, a.instruction].filter(Boolean).join("\n\n");
       return `<div class="card${a.id === selected ? " sel open" : ""}" data-id="${esc(a.id)}" style="--c:${colorFor(a)}">
-        <div class="title">${tags}${esc(a.event)} <span class="muted">· ${esc(a.office || a.sender_name)}</span> ${upd} ${push}</div>
+        <div class="title">${tags}${esc(labelFor(a))} <span class="muted">· ${esc(a.office || a.sender_name)}</span> ${upd} ${push}</div>
         <div class="meta">${threat ? esc(threat) + " · " : ""}${esc(a.area_desc)}</div>
         <div class="times"><span class="muted">${esc(dayLabel(a.sent))}</span> ${esc(sent)}${exp ? ` <span class="muted">→ until</span> ${esc(exp)}` : ""}</div>
         ${a.reason ? `<div class="reason">${esc(a.reason)}</div>` : ""}

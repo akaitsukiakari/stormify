@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:nhc="https://www.nhc.noaa.gov">
+  <channel>
+    <title>CPHC Central North Pacific</title>
+    <item>
+      <title>Central North Pacific Tropical Weather Outlook</title>
+      <description><![CDATA[000<br />ACPN50 PHFO 071137<br />TWOCP <br /><br />Tropical Weather Outlook<br />NWS Central Pacific Hurricane Center Honolulu HI<br />200 AM HST Wed Oct 7 2026<br /><br />For the central North Pacific...between 140W and 180W:<br /><br />Tropical cyclones are not expected during the next 7 days.<br /><br />$$<br />Forecaster Kino]]></description>
+      <pubDate>Wed, 07 Oct 2026 11:37:00 GMT</pubDate>
+      <link>https://www.nhc.noaa.gov/gtwo.php?basin=cpac</link>
+      <guid>https://www.nhc.noaa.gov/gtwo.php?basin=cpac&amp;202610071137</guid>
+    </item>
+    <item>
+      <title>There are no tropical cyclones at this time.</title>
+      <description>There are no tropical cyclones at this time.</description>
+      <link>https://www.nhc.noaa.gov/</link>
+      <guid>https://www.nhc.noaa.gov/</guid>
+    </item>
+  </channel>
+</rss>

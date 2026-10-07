@@ -11,7 +11,7 @@ import requests
 from .config import Config
 from .db import Database, utcnow
 from .engine import Engine
-from .sources import NWSAlertsSource, Source
+from .sources import NHCSource, NWSAlertsSource, Source
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +22,11 @@ class Poller:
         self.cfg = cfg
         self.db = db
         self.nws = NWSAlertsSource(cfg.nws_base_url, cfg.user_agent)
-        self.sources = sources if sources is not None else [self.nws]
+        if sources is None:
+            sources = [self.nws]
+            if cfg.nhc_enabled:
+                sources.append(NHCSource(cfg.nhc_base_url, cfg.user_agent, cfg.nhc_basins))
+        self.sources = sources
         self.engine = engine or Engine(db, cfg, tz_lookup=self.nws.zone_timezone)
         self._stop = False
         self._last_prune = 0.0

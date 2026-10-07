@@ -44,9 +44,11 @@ def _password(given: str | None) -> str:
         print("Passwords didn't match (or were empty). Try again.")
 
 
-def example_rules() -> list[dict]:
-    text = resources.files("stormify").joinpath("examples/rules.json").read_text()
-    return json.loads(text)["rules"]
+def example_rules(name: str = "rules") -> list[dict]:
+    path = resources.files("stormify").joinpath(f"examples/{name}.json")
+    if not path.is_file():
+        sys.exit(f"No example rule set named {name!r}")
+    return json.loads(path.read_text())["rules"]
 
 
 def _read_rules_file(path: str) -> list[dict]:
@@ -113,6 +115,19 @@ def cmd_rules(cfg, args) -> int:
         rules = _read_rules_file(args.file)
         db.replace_rules(u["id"], rules)
         print(f"Imported {len(rules)} rules for {u['name']} (replaced existing)")
+    elif args.action == "add":
+        if bool(args.file) == bool(args.example):
+            sys.exit("rules add needs a file or --example NAME (e.g. --example tropical)")
+        new = example_rules(args.example) if args.example else _read_rules_file(args.file)
+        rules = db.list_rules(u["id"])
+        names = {r["name"] for r in rules}
+        added = [r for r in new if r["name"] not in names]
+        for r in rules:
+            r.pop("id", None)
+        db.replace_rules(u["id"], rules + added)
+        for r in new:
+            print(("added   " if r in added else "skipped ") + r["name"]
+                  + ("" if r in added else " (already have a rule with this name)"))
     elif args.action == "list":
         for r in db.list_rules(u["id"]):
             flag = "on " if r["enabled"] else "off"
@@ -231,9 +246,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timezone", default="America/Denver")
     p.set_defaults(fn=cmd_user)
 
-    p = sub.add_parser("rules", help="list / export / import a user's rules (JSON)")
-    p.add_argument("action", choices=["list", "export", "import"])
+    p = sub.add_parser("rules", help="list / export / import / add a user's rules (JSON)")
+    p.add_argument("action", choices=["list", "export", "import", "add"])
     p.add_argument("file", nargs="?")
+    p.add_argument("--example", help="with add: a bundled rule set, e.g. tropical")
     p.add_argument("--user", required=True)
     p.set_defaults(fn=cmd_rules)
 

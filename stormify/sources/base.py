@@ -8,7 +8,7 @@ from ..models import Alert
 class Source(ABC):
     """A pollable feed of alerts.
 
-    Future sources (SPC outlooks/MDs, NHC, SWPC space weather, hail) implement
+    Sources (NWS and NHC today; SPC outlooks/MDs, SWPC space weather, hail later) implement
     this same interface, so the rules engine and delivery never change.
     """
 

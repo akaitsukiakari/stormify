@@ -21,6 +21,11 @@ class Config:
     user_agent: str = "(stormify, change-me@example.com)"
     poll_interval: int = 60
     nws_base_url: str = "https://api.weather.gov"
+    # National Hurricane Center products (advisories, discussions, outlooks), per basin:
+    # at = Atlantic, ep = Eastern Pacific, cp = Central Pacific.
+    nhc_enabled: bool = True
+    nhc_basins: list = field(default_factory=lambda: ["at", "ep", "cp"])
+    nhc_base_url: str = "https://www.nhc.noaa.gov"
     # Heartbeat is considered stale (health endpoint returns 503) after this many seconds.
     heartbeat_stale_seconds: int = 300
     # Safety valve for outbreaks: beyond this many pushes in one poll, send one summary instead.
