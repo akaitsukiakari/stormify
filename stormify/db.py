@@ -265,7 +265,9 @@ class Database:
             sql.append("AND a.data_json LIKE ?")
             args.append(f"%{q}%")
         if active_only:
-            sql.append("AND (a.expires IS NULL OR a.expires = '' OR julianday(a.expires) > julianday('now'))")
+            # Text products never expire, so they'd sit in "active" forever; leave them out.
+            sql.append("AND a.kind != 'Product'"
+                       " AND (a.expires IS NULL OR a.expires = '' OR julianday(a.expires) > julianday('now'))")
         sql.append("ORDER BY a.first_seen DESC, a.sent DESC LIMIT ?")
         args.append(limit)
         out = []

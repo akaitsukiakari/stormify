@@ -23,6 +23,8 @@ from .timefmt import fmt_event, fmt_local, fmt_multi, fmt_zulu, parse_iso
 
 DEFAULT_TITLE = "{status_prefix}{tags_prefix}{event} · {office}"
 DEFAULT_BODY = "{threat}{area_short}\nUntil {expires}\n{nws_headline}"
+# Text products (AFD, HWO, ...) have no area or expiry.
+PRODUCT_BODY = "{headline}\nIssued {sent}"
 
 TAG_LABELS = {
     "emergency": "EMERGENCY",

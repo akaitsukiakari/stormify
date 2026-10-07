@@ -34,6 +34,10 @@ class Config:
     public_url: str = ""
     # CARTO basemaps key (free at https://carto.com/basemaps/apikey/). Without it the map uses plain OpenStreetMap tiles.
     map_key: str = ""
+    # NWS text products (AFD, HWO, RER, ...) for these locations; empty = off.
+    products_locations: list = field(default_factory=list)
+    products_types: list = field(default_factory=list)
+    products_interval: int = 300
     extra: dict = field(default_factory=dict)
 
 
@@ -46,6 +50,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
             data = tomllib.load(f)
         general = data.get("general", {})
         web = data.get("web", {})
+        products = data.get("nws_products", {})
         for key, value in general.items():
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
@@ -54,6 +59,10 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         mapping = {"host": "web_host", "port": "web_port", "secret_key": "secret_key", "public_url": "public_url"}
         for key, value in web.items():
             setattr(cfg, mapping.get(key, key), value)
+        if products:
+            cfg.products_locations = list(products.get("offices", []))
+            cfg.products_types = list(products.get("types", []))
+            cfg.products_interval = int(products.get("poll_interval", cfg.products_interval))
     if not cfg.secret_key:
         cfg.secret_key = os.environ.get("STORMIFY_SECRET_KEY") or secrets.token_hex(32)
     return cfg
