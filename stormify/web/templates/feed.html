@@ -21,27 +21,33 @@
   <a class="ghost" href="/logout">Sign out</a>
 </header>
 
-<section class="filters">
-  <select id="f-hours" title="Time range">
-    <option value="1">Last hour</option>
-    <option value="6">Last 6 h</option>
-    <option value="24" selected>Last 24 h</option>
-    <option value="72">Last 3 days</option>
-    <option value="168">Last 7 days</option>
-    <option value="0">All time</option>
-  </select>
-  <select id="f-action" title="Delivery">
-    <option value="">Pushed + logged</option>
-    <option value="push">Pushed only</option>
-    <option value="log">Logged only</option>
-  </select>
-  <div class="chips" id="f-kinds"></div>
-  <input id="f-office" list="dl-offices" placeholder="Offices (BOU, FWD…)" autocomplete="off">
-  <input id="f-event" list="dl-events" placeholder="Event type" autocomplete="off">
-  <input id="f-q" type="search" placeholder="Search text (PDS, hail…)">
-  <label class="check"><input type="checkbox" id="f-active">Active only</label>
-  <datalist id="dl-offices"></datalist>
-  <datalist id="dl-events"></datalist>
+<section class="filters" id="filters">
+  <div class="filters-bar">
+    <button class="ghost" id="f-toggle" aria-expanded="true" aria-controls="filters-body">Filters</button>
+    <span class="muted small" id="f-summary"></span>
+  </div>
+  <div class="filters-body" id="filters-body">
+    <select id="f-hours" title="Time range">
+      <option value="1">Last hour</option>
+      <option value="6">Last 6 h</option>
+      <option value="24" selected>Last 24 h</option>
+      <option value="72">Last 3 days</option>
+      <option value="168">Last 7 days</option>
+      <option value="0">All time</option>
+    </select>
+    <select id="f-action" title="Delivery">
+      <option value="">Pushed + logged</option>
+      <option value="push">Pushed only</option>
+      <option value="log">Logged only</option>
+    </select>
+    <div class="chips" id="f-kinds"></div>
+    <input id="f-office" list="dl-offices" placeholder="Offices (BOU, FWD…)" autocomplete="off">
+    <input id="f-event" list="dl-events" placeholder="Event type" autocomplete="off">
+    <input id="f-q" type="search" placeholder="Search text (PDS, hail…)">
+    <label class="check"><input type="checkbox" id="f-active">Active only</label>
+    <datalist id="dl-offices"></datalist>
+    <datalist id="dl-events"></datalist>
+  </div>
 </section>
 
 <main class="layout">
@@ -53,11 +59,12 @@
 </main>
 
 <aside class="sheet" id="sheet" hidden aria-label="Alert details">
-  <div class="sheet-head"><span class="muted small">Tapped on the map</span><button class="ghost" id="sheet-close" aria-label="Close">✕</button></div>
+  <div class="sheet-head"><span class="muted small" id="sheet-label">Tapped on the map</span><button class="ghost" id="sheet-close" aria-label="Close">✕</button></div>
   <div id="sheet-body"></div>
 </aside>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('static', filename='offices.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

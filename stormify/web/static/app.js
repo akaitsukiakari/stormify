@@ -40,6 +40,10 @@
   // NHC products read better by their own title ("Tropical Storm Isaias Public Advisory Number 4").
   const labelFor = (a) => (a.source === "nhc" && a.headline) ? a.headline : a.event;
 
+  // "BOU (Denver/Boulder, CO)": keep the code, add where it is when we know.
+  const OFFICES = window.STORMIFY_OFFICES || {};
+  const officeLabel = (code) => code && OFFICES[code] ? `${code} (${OFFICES[code]})` : (code || "");
+
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const colorFor = (a) => (a.tags || []).includes("emergency") ? "#ff2e63" : (EVENT_COLORS[a.event] || KIND_COLORS[a.kind] || "#8b94a5");
@@ -152,14 +156,23 @@
     return r;
   }
 
+  // The minute refresh usually brings back exactly what's already drawn (the server answers 304 and
+  // the browser hands back its cached copy); skip the redraw then so a phone isn't rebuilding
+  // hundreds of polygons and cards for nothing.
+  let lastQuery = "", lastText = "";
   async function load(reset) {
     try {
-      const r = await getJSON("/api/alerts?" + params());
-      const j = await r.json();
-      alerts = j.alerts || [];
-      total = j.total ?? alerts.length;
+      const q = params().toString();
+      const [r] = await Promise.all([getJSON("/api/alerts?" + q), metaReady]);
+      const text = await r.text();
       if (reset === true) shown = LIST_PAGE;
-      render();
+      if (reset === true || q !== lastQuery || text !== lastText) {
+        const j = JSON.parse(text);
+        alerts = j.alerts || [];
+        total = j.total ?? alerts.length;
+        lastQuery = q; lastText = text;
+        render();
+      }
       $("updated").textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
     } catch (e) { if (e.message !== "login") $("count").textContent = "Could not load alerts"; }
   }
@@ -168,7 +181,7 @@
     try {
       const r = await getJSON("/api/meta");
       meta = { ...meta, ...(await r.json()) };
-      $("dl-offices").innerHTML = (meta.offices || []).map((o) => `<option value="${esc(o)}">`).join("");
+      $("dl-offices").innerHTML = (meta.offices || []).map((o) => `<option value="${esc(o)}"${OFFICES[o] ? ` label="${esc(o)} (${esc(OFFICES[o])})"` : ""}>`).join("");
       $("dl-events").innerHTML = (meta.events || []).map((e) => `<option value="${esc(e)}">`).join("");
     } catch { /* keep defaults */ }
   }
@@ -210,20 +223,24 @@
         pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
       });
       layer.on("click", (e) => { L.DomEvent.stopPropagation(e); mapTap(a); });
-      layer.bindTooltip(`${esc(labelFor(a))} · ${esc(a.office)}`, { sticky: true });
+      layer.bindTooltip(`${esc(labelFor(a))} · ${esc(officeLabel(a.office))}`, { sticky: true });
       layer.addTo(polyGroup);
+      layer.bounds = layer.getBounds();  // the legend checks these on every pan; work them out once
       layers.set(a.id, layer);
     });
+    highlight(selected);
     renderLegend();
 
     renderList();
 
     if (selected && layers.has(selected) && !map._userMoved) {
-      map.fitBounds(layers.get(selected).getBounds(), { maxZoom: 9, padding: [30, 30] });
+      map.fitBounds(layers.get(selected).bounds, { maxZoom: 9, padding: [30, 30] });
     } else if (polyGroup.getLayers().length && !map._userMoved) {
       map.fitBounds(polyGroup.getBounds(), { maxZoom: 7, padding: [20, 20] });
     }
   }
+
+  const PIN = `<svg viewBox="0 0 12 16" width="10" height="13" aria-hidden="true"><path d="M6 0a6 6 0 0 0-6 6c0 4.5 6 10 6 10s6-5.5 6-10a6 6 0 0 0-6-6zm0 8.5A2.5 2.5 0 1 1 6 3.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg>`;
 
   function cardHtml(a, cls = "") {
     const tags = (a.tags || []).filter((t) => TAG_LABELS[t]).map((t) => `<span class="badge tag">${TAG_LABELS[t]}</span>`).join("");
@@ -233,7 +250,7 @@
     const sent = fmtTimes(a.sent, a.event_tz);
     const exp = fmtTimes(a.expires || a.ends, a.event_tz);
     return `<div class="card${cls}" data-id="${esc(a.id)}" style="--c:${colorFor(a)}">
-      <div class="title">${tags}${esc(labelFor(a))} <span class="muted">· ${esc(a.office || a.sender_name)}</span> ${upd} ${push}</div>
+      <div class="title">${tags}${esc(labelFor(a))} <span class="muted">· ${esc(officeLabel(a.office) || a.sender_name)}</span> ${upd} ${push}${a.geometry ? `<button class="jump" title="Show on the map">${PIN}Map</button>` : ""}</div>
       <div class="meta">${threat ? esc(threat) + " · " : ""}${esc(a.area_desc)}</div>
       <div class="times"><span class="muted">${esc(dayLabel(a.sent))}</span> ${esc(sent)}${exp ? ` <span class="muted">→ until</span> ${esc(exp)}` : ""}</div>
       ${a.reason ? `<div class="reason">${esc(a.reason)}</div>` : ""}
@@ -273,17 +290,60 @@
   // instead of scrolling away. On a wide screen the list is beside the map, so it scrolls there.
   function mapTap(a) {
     if (!mobile.matches) { select(a.id, false); return; }
+    openSheet(a, "Tapped on the map");
+  }
+
+  // Phone: the map (42vh) sits on top and the sheet (50vh) below it, so the polygon stays in view.
+  let returnTo = null;  // where to scroll back to when a sheet opened from the list is closed
+  function openSheet(a, label) {
     selected = a.id;
     const u = new URL(location); u.searchParams.set("alert", a.id); history.replaceState(null, "", u);
     document.querySelectorAll("#list .card").forEach((el) => el.classList.toggle("sel", el.dataset.id === a.id));
+    highlight(a.id);
+    $("sheet-label").textContent = label;
     $("sheet-body").innerHTML = cardHtml(a, " open");
     $("sheet").hidden = false;
     $("sheet").scrollTop = 0;
-    // Map (42vh) on top, sheet (50vh) below, so the tapped polygon stays in view.
     $("map").scrollIntoView({ block: "start", behavior: "smooth" });
     fillBody(a.id);
   }
-  function closeSheet() { $("sheet").hidden = true; }
+  function closeSheet(back) {
+    if ($("sheet").hidden) return;
+    $("sheet").hidden = true;
+    if (back === true && returnTo !== null) window.scrollTo({ top: returnTo, behavior: "smooth" });
+    returnTo = null;
+  }
+
+  // The list's Map button: zoom to the alert's polygon and pick it out. On a phone the list is below
+  // the map, so scroll up to it and show the alert in the sheet; ✕ brings you back to your place.
+  function jump(id) {
+    const a = alerts.find((x) => x.id === id);
+    const layer = layers.get(id);
+    if (!a || !layer) return;
+    map._userMoved = true;  // stay put on the next refresh
+    if (mobile.matches) {
+      if ($("sheet").hidden) returnTo = window.scrollY;
+      openSheet(a, "Back to the list");
+      map.fitBounds(layer.bounds, { maxZoom: 10, padding: [24, 24] });
+    } else {
+      select(id, false, 10);
+    }
+  }
+
+  // Thicker outline on the selected polygon, drawn above its neighbors.
+  let lit = null;
+  function highlight(id) {
+    if (lit) lit.eachLayer((l) => l.setStyle(l.base));
+    lit = null;
+    const layer = id && layers.get(id);
+    if (!layer) return;
+    layer.eachLayer((l) => {
+      l.base ??= { weight: l.options.weight, fillOpacity: l.options.fillOpacity };
+      l.setStyle({ weight: l.base.weight + 2.5, fillOpacity: Math.max(l.base.fillOpacity, 0.4) });
+    });
+    layer.bringToFront();
+    lit = layer;
+  }
 
   function swatch(e) {
     if (e.storm) {
@@ -303,7 +363,7 @@
     const rows = new Map();
     for (const a of alerts) {
       const layer = layers.get(a.id);
-      if (!layer || !layer.getBounds().isValid() || !view.intersects(layer.getBounds())) continue;
+      if (!layer || !layer.bounds.isValid() || !view.intersects(layer.bounds)) continue;
       const storm = a.source === "nhc" ? ((a.params || {}).storm || a.event) : "";
       const emergency = (a.tags || []).includes("emergency");
       const key = storm ? "nhc:" + storm : a.event + (emergency ? ":emergency" : "");
@@ -328,7 +388,7 @@
       </div>`;
   }
 
-  function select(id, toggle = true) {
+  function select(id, toggle = true, maxZoom = 9) {
     const was = selected === id;
     selected = id;
     if (!document.querySelector(`#list .card[data-id="${CSS.escape(id)}"]`)) renderList();
@@ -340,7 +400,8 @@
       if (on && !toggle) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
     const layer = layers.get(id);
-    if (layer) map.fitBounds(layer.getBounds(), { maxZoom: 9, padding: [30, 30] });
+    highlight(id);
+    if (layer) map.fitBounds(layer.bounds, { maxZoom, padding: [30, 30] });
     const u = new URL(location); u.searchParams.set("alert", id); history.replaceState(null, "", u);
   }
 
@@ -363,15 +424,46 @@
   const reload = () => load(true);
   ["f-hours", "f-action", "f-active"].forEach((id) => $(id).addEventListener("change", reload));
   ["f-office", "f-event", "f-q"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(reload, 350); }));
+
+  // ---- filter bar: collapses to one line, which matters on a phone ----------------
+  // Starts collapsed on a phone and open on a wide screen; after that it remembers your choice.
+  function summarize() {
+    const parts = [$("f-hours").selectedOptions[0].text];
+    if ($("f-action").value) parts.push($("f-action").selectedOptions[0].text);
+    if (activeKinds.size) parts.push([...activeKinds].join(", "));
+    for (const id of ["f-office", "f-event"]) if ($(id).value.trim()) parts.push($(id).value.trim());
+    if ($("f-q").value.trim()) parts.push(`"${$("f-q").value.trim()}"`);
+    if ($("f-active").checked) parts.push("active only");
+    $("f-summary").textContent = parts.join(" · ");
+  }
+  function setFilters(open, remember) {
+    $("filters").classList.toggle("collapsed", !open);
+    $("f-toggle").setAttribute("aria-expanded", String(open));
+    if (remember) { try { localStorage.setItem("filtersOpen", open ? "1" : "0"); } catch { /* ignore */ } }
+    map.invalidateSize();  // on a wide screen the map just changed height
+  }
+  let filtersOpen = !mobile.matches;
+  try { const v = localStorage.getItem("filtersOpen"); if (v) filtersOpen = v === "1"; } catch { /* ignore */ }
+  setFilters(filtersOpen, false);
+  $("f-toggle").addEventListener("click", () => setFilters($("filters").classList.contains("collapsed"), true));
+  $("filters-body").addEventListener("change", summarize);
+  $("filters-body").addEventListener("input", summarize);
+  $("f-kinds").addEventListener("click", summarize);
+  summarize();
   $("list").addEventListener("click", (e) => {
     if (e.target.closest("#more")) { shown += LIST_PAGE; renderList(); return; }
     const card = e.target.closest(".card");
+    if (card && e.target.closest(".jump")) { jump(card.dataset.id); return; }
     if (card && !window.getSelection().toString()) select(card.dataset.id);
   });
   map.on("moveend", renderLegend);
   map.on("click", closeSheet);
-  $("sheet-close").addEventListener("click", closeSheet);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+  $("sheet-close").addEventListener("click", () => closeSheet(true));
+  $("sheet-body").addEventListener("click", (e) => {
+    const card = e.target.closest(".card");
+    if (card && e.target.closest(".jump")) jump(card.dataset.id);
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(true); });
   mobile.addEventListener("change", closeSheet);
   // Stop auto-fitting once you've panned or zoomed the map yourself.
   ["mousedown", "wheel", "touchstart"].forEach((ev) => $("map").addEventListener(ev, () => { map._userMoved = true; }, { passive: true }));
@@ -381,8 +473,12 @@
     toast(r.ok ? "Test notification sent." : (j.error || "Test failed."));
   });
 
-  loadMeta().then(load);
+  // Meta and alerts load side by side; alerts wait for meta only before drawing (it sets the time zone).
+  const metaReady = loadMeta();
+  load();
   loadHealth();
-  setInterval(load, 60000);
-  setInterval(loadHealth, 30000);
+  // No point polling the Pi from a tab nobody's looking at; catch up as soon as it's visible again.
+  setInterval(() => { if (!document.hidden) load(); }, 60000);
+  setInterval(() => { if (!document.hidden) loadHealth(); }, 30000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); loadHealth(); } });
 })();
