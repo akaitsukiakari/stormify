@@ -86,3 +86,22 @@ def test_favicon_served_and_linked(client):
     assert b"favicon.svg" in client.get("/login").data
     r = client.get("/static/favicon.svg")
     assert r.status_code == 200 and b"<svg" in r.data
+
+
+def test_feed_total_lite_and_single_alert(client):
+    login(client)
+    n = len(collection()["features"])
+    full = client.get("/api/alerts?hours=0").json
+    assert full["total"] == n and any(a.get("description") for a in full["alerts"])
+    # A limit below the match count still reports how many matched.
+    capped = client.get("/api/alerts?hours=0&limit=2").json
+    assert len(capped["alerts"]) == 2 and capped["total"] == n
+    pushed = client.get("/api/alerts?hours=0&action=push&limit=1").json
+    assert pushed["total"] == 6
+    lite = client.get("/api/alerts?hours=0&lite=1").json["alerts"]
+    assert len(lite) == n
+    assert all("description" not in a and "zones" not in a for a in lite)
+    assert all("geometry" in a and "area_desc" in a for a in lite)
+    one = client.get("/api/alert", query_string={"id": lite[0]["id"]}).json["alert"]
+    assert one["id"] == lite[0]["id"] and "description" in one
+    assert client.get("/api/alert?id=nope").status_code == 404

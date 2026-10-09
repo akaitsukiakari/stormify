@@ -46,6 +46,12 @@
 
   let meta = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, time_display: ["local", "event", "zulu"] };
   let alerts = [];
+  let total = 0;
+  // Cards are drawn a page at a time so a long list doesn't bog down a phone.
+  const LIST_PAGE = 100;
+  let shown = LIST_PAGE;
+  const bodies = new Map();  // alert id -> full text, fetched when a card or sheet opens
+  const mobile = window.matchMedia("(max-width: 900px)");
   let selected = new URLSearchParams(location.search).get("alert");
   const activeKinds = new Set();
   const layers = new Map();
@@ -136,6 +142,7 @@
     if ($("f-q").value.trim()) p.set("q", $("f-q").value.trim());
     if ($("f-active").checked) p.set("active", "1");
     if (selected) p.set("id", selected);
+    p.set("lite", "1");
     return p;
   }
 
@@ -145,10 +152,13 @@
     return r;
   }
 
-  async function load() {
+  async function load(reset) {
     try {
       const r = await getJSON("/api/alerts?" + params());
-      alerts = (await r.json()).alerts || [];
+      const j = await r.json();
+      alerts = j.alerts || [];
+      total = j.total ?? alerts.length;
+      if (reset === true) shown = LIST_PAGE;
       render();
       $("updated").textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
     } catch (e) { if (e.message !== "login") $("count").textContent = "Could not load alerts"; }
@@ -178,7 +188,9 @@
 
   // ---- render -----------------------------------------------------------------
   function render() {
-    $("count").textContent = `${alerts.length} alert${alerts.length === 1 ? "" : "s"}`;
+    $("count").textContent = total > alerts.length
+      ? `Newest ${alerts.length.toLocaleString()} of ${total.toLocaleString()} alerts`
+      : `${alerts.length.toLocaleString()} alert${alerts.length === 1 ? "" : "s"}`;
     polyGroup.clearLayers();
     layers.clear();
     const list = $("list");
@@ -197,36 +209,81 @@
         // Storm centers (NHC advisories) are points; their forecast track is a line.
         pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
       });
-      layer.on("click", () => select(a.id, false));
+      layer.on("click", (e) => { L.DomEvent.stopPropagation(e); mapTap(a); });
       layer.bindTooltip(`${esc(labelFor(a))} · ${esc(a.office)}`, { sticky: true });
       layer.addTo(polyGroup);
       layers.set(a.id, layer);
     });
     renderLegend();
 
-    list.innerHTML = alerts.map((a) => {
-      const tags = (a.tags || []).filter((t) => TAG_LABELS[t]).map((t) => `<span class="badge tag">${TAG_LABELS[t]}</span>`).join("");
-      const upd = a.message_type && a.message_type !== "Alert" ? `<span class="badge upd">${esc(a.message_type.toUpperCase())}</span>` : "";
-      const push = a.action === "push" ? `<span class="badge push">PUSHED</span>` : "";
-      const threat = [a.hail_in ? `${a.hail_in}" hail` : "", a.wind_mph ? `${a.wind_mph} mph` : ""].filter(Boolean).join(" · ");
-      const sent = fmtTimes(a.sent, a.event_tz);
-      const exp = fmtTimes(a.expires || a.ends, a.event_tz);
-      const body = [a.nws_headline, a.description, a.instruction].filter(Boolean).join("\n\n");
-      return `<div class="card${a.id === selected ? " sel open" : ""}" data-id="${esc(a.id)}" style="--c:${colorFor(a)}">
-        <div class="title">${tags}${esc(labelFor(a))} <span class="muted">· ${esc(a.office || a.sender_name)}</span> ${upd} ${push}</div>
-        <div class="meta">${threat ? esc(threat) + " · " : ""}${esc(a.area_desc)}</div>
-        <div class="times"><span class="muted">${esc(dayLabel(a.sent))}</span> ${esc(sent)}${exp ? ` <span class="muted">→ until</span> ${esc(exp)}` : ""}</div>
-        ${a.reason ? `<div class="reason">${esc(a.reason)}</div>` : ""}
-        <pre>${esc(body || a.headline)}</pre>
-      </div>`;
-    }).join("");
+    renderList();
 
-    if (selected && layers.has(selected)) {
+    if (selected && layers.has(selected) && !map._userMoved) {
       map.fitBounds(layers.get(selected).getBounds(), { maxZoom: 9, padding: [30, 30] });
     } else if (polyGroup.getLayers().length && !map._userMoved) {
       map.fitBounds(polyGroup.getBounds(), { maxZoom: 7, padding: [20, 20] });
     }
   }
+
+  function cardHtml(a, cls = "") {
+    const tags = (a.tags || []).filter((t) => TAG_LABELS[t]).map((t) => `<span class="badge tag">${TAG_LABELS[t]}</span>`).join("");
+    const upd = a.message_type && a.message_type !== "Alert" ? `<span class="badge upd">${esc(a.message_type.toUpperCase())}</span>` : "";
+    const push = a.action === "push" ? `<span class="badge push">PUSHED</span>` : "";
+    const threat = [a.hail_in ? `${a.hail_in}" hail` : "", a.wind_mph ? `${a.wind_mph} mph` : ""].filter(Boolean).join(" · ");
+    const sent = fmtTimes(a.sent, a.event_tz);
+    const exp = fmtTimes(a.expires || a.ends, a.event_tz);
+    return `<div class="card${cls}" data-id="${esc(a.id)}" style="--c:${colorFor(a)}">
+      <div class="title">${tags}${esc(labelFor(a))} <span class="muted">· ${esc(a.office || a.sender_name)}</span> ${upd} ${push}</div>
+      <div class="meta">${threat ? esc(threat) + " · " : ""}${esc(a.area_desc)}</div>
+      <div class="times"><span class="muted">${esc(dayLabel(a.sent))}</span> ${esc(sent)}${exp ? ` <span class="muted">→ until</span> ${esc(exp)}` : ""}</div>
+      ${a.reason ? `<div class="reason">${esc(a.reason)}</div>` : ""}
+      <pre>${bodies.has(a.id) ? esc(bodies.get(a.id)) : "Loading full text…"}</pre>
+    </div>`;
+  }
+
+  function renderList() {
+    // Keep the selected card on the page even if it sits past the first page.
+    const at = selected ? alerts.findIndex((a) => a.id === selected) : -1;
+    if (at >= shown) shown = Math.ceil((at + 1) / LIST_PAGE) * LIST_PAGE;
+    const left = alerts.length - shown;
+    $("list").innerHTML = alerts.slice(0, shown).map((a) => cardHtml(a, a.id === selected ? " sel open" : "")).join("")
+      + (left > 0 ? `<button class="more" id="more">Show ${Math.min(left, LIST_PAGE)} more <span class="muted">(${left.toLocaleString()} left)</span></button>` : "")
+      + (total > alerts.length ? `<div class="empty small">Showing the newest ${alerts.length.toLocaleString()}. Narrow the filters or time range to see older ones.</div>` : "");
+    if (selected) fillBody(selected);
+  }
+
+  // Full text isn't in the list payload; fetch it once per alert when it's opened.
+  async function fillBody(id) {
+    if (!bodies.has(id)) {
+      try {
+        const r = await getJSON("/api/alert?id=" + encodeURIComponent(id));
+        if (!r.ok) throw new Error("load");
+        const a = (await r.json()).alert;
+        bodies.set(id, [a.nws_headline, a.description, a.instruction].filter(Boolean).join("\n\n") || a.headline || "");
+      } catch (e) {
+        if (e.message === "login") return;
+        document.querySelectorAll(`[data-id="${CSS.escape(id)}"] pre`).forEach((el) => { el.textContent = "Could not load the full text."; });
+        return;
+      }
+    }
+    document.querySelectorAll(`[data-id="${CSS.escape(id)}"] pre`).forEach((el) => { el.textContent = bodies.get(id); });
+  }
+
+  // On a phone the list sits under the map, so a tap shows the alert in a sheet over the page
+  // instead of scrolling away. On a wide screen the list is beside the map, so it scrolls there.
+  function mapTap(a) {
+    if (!mobile.matches) { select(a.id, false); return; }
+    selected = a.id;
+    const u = new URL(location); u.searchParams.set("alert", a.id); history.replaceState(null, "", u);
+    document.querySelectorAll("#list .card").forEach((el) => el.classList.toggle("sel", el.dataset.id === a.id));
+    $("sheet-body").innerHTML = cardHtml(a, " open");
+    $("sheet").hidden = false;
+    $("sheet").scrollTop = 0;
+    // Map (42vh) on top, sheet (50vh) below, so the tapped polygon stays in view.
+    $("map").scrollIntoView({ block: "start", behavior: "smooth" });
+    fillBody(a.id);
+  }
+  function closeSheet() { $("sheet").hidden = true; }
 
   function swatch(e) {
     if (e.storm) {
@@ -274,10 +331,12 @@
   function select(id, toggle = true) {
     const was = selected === id;
     selected = id;
+    if (!document.querySelector(`#list .card[data-id="${CSS.escape(id)}"]`)) renderList();
     document.querySelectorAll(".card").forEach((el) => {
       const on = el.dataset.id === id;
       el.classList.toggle("sel", on);
       if (on) el.classList.toggle("open", toggle ? !el.classList.contains("open") || !was : true);
+      if (on && el.classList.contains("open")) fillBody(id);
       if (on && !toggle) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
     const layer = layers.get(id);
@@ -298,16 +357,22 @@
     const k = e.target.dataset.kind; if (!k) return;
     activeKinds.has(k) ? activeKinds.delete(k) : activeKinds.add(k);
     e.target.classList.toggle("on");
-    load();
+    load(true);
   });
   let debounce;
-  ["f-hours", "f-action", "f-active"].forEach((id) => $(id).addEventListener("change", load));
-  ["f-office", "f-event", "f-q"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(load, 350); }));
+  const reload = () => load(true);
+  ["f-hours", "f-action", "f-active"].forEach((id) => $(id).addEventListener("change", reload));
+  ["f-office", "f-event", "f-q"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(reload, 350); }));
   $("list").addEventListener("click", (e) => {
+    if (e.target.closest("#more")) { shown += LIST_PAGE; renderList(); return; }
     const card = e.target.closest(".card");
     if (card && !window.getSelection().toString()) select(card.dataset.id);
   });
   map.on("moveend", renderLegend);
+  map.on("click", closeSheet);
+  $("sheet-close").addEventListener("click", closeSheet);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+  mobile.addEventListener("change", closeSheet);
   // Stop auto-fitting once you've panned or zoomed the map yourself.
   ["mousedown", "wheel", "touchstart"].forEach((ev) => $("map").addEventListener(ev, () => { map._userMoved = true; }, { passive: true }));
   $("test-btn").addEventListener("click", async () => {
