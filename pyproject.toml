@@ -17,6 +17,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+# Map pictures on notifications. piwheels has armv6 builds, so this still installs on a Pi Zero.
+images = ["Pillow>=9.2"]
 
 [project.scripts]
 stormify = "stormify.cli:main"

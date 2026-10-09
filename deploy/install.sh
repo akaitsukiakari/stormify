@@ -25,7 +25,17 @@ chown stormify:stormify "$DATA_DIR"
 echo "==> Installing Stormify into $APP_DIR/venv (this is slow on a Pi Zero; be patient)"
 [[ -d "$APP_DIR/venv" ]] || python3 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/pip" install --quiet --upgrade pip
-"$APP_DIR/venv/bin/pip" install --quiet "$REPO_DIR"
+# Pillow (for map pictures on notifications) is optional: if pip can't install it, fall back to
+# Debian's build and let the venv see it, and if that fails too, carry on without pictures.
+if ! "$APP_DIR/venv/bin/pip" install --quiet "$REPO_DIR[images]"; then
+  echo "    Pillow didn't install from pip; trying the Debian package"
+  "$APP_DIR/venv/bin/pip" install --quiet "$REPO_DIR"
+  if apt-get install -y -qq python3-pil; then
+    sed -i 's/^include-system-site-packages = false/include-system-site-packages = true/' "$APP_DIR/venv/pyvenv.cfg"
+  else
+    echo "    Skipping map pictures on notifications (Pillow unavailable)"
+  fi
+fi
 
 if [[ ! -f "$CONF_DIR/config.toml" ]]; then
   echo "==> Writing $CONF_DIR/config.toml"

@@ -60,6 +60,11 @@ class Config:
     extra: dict = field(default_factory=dict)
 
 
+def cache_dir(cfg: Config) -> str:
+    """Where map tiles and notification images are kept: cache_dir, else next to the database."""
+    return cfg.cache_dir or str(Path(cfg.db_path).resolve().parent / "cache")
+
+
 def load_config(path: str | os.PathLike | None = None) -> Config:
     path = path or os.environ.get("STORMIFY_CONFIG") or "config.toml"
     cfg = Config()

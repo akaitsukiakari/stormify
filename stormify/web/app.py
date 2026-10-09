@@ -9,13 +9,14 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
-from .. import __version__
-from ..config import Config
+from .. import __version__, images
+from ..config import Config, cache_dir
 from ..db import Database
 from ..delivery import DeliveryError, Notification, channels_for_user
 from ..health import health
 from ..rules import RuleError, load_rules
 from ..timefmt import DEFAULT_DISPLAY
+from ..zones import ZoneShapes, pending_from_alert
 
 # Most alerts one /api/alerts call returns. A busy 24 h nationwide is several hundred; this keeps
 # "Last 7 days" or "All time" from asking the Pi to serialize tens of thousands at once.
@@ -78,6 +79,34 @@ def create_app(cfg: Config, db: Database) -> Flask:
     def api_health():
         h = health(db, cfg.heartbeat_stale_seconds)
         return jsonify(h), (200 if h["status"] == "ok" else 503)
+
+    # ---- notification map images (no login: ntfy fetches them for the phone) ------
+    renderer = None
+
+    @app.route("/img/<token>.png")
+    def notification_image(token):
+        nonlocal renderer
+        alert_id = db.alert_for_image(token)
+        a = db.get_alert(alert_id) if alert_id else None
+        if not a or not images.available():
+            return Response("not found", status=404, mimetype="text/plain")
+        geom, complete = a.geometry, True
+        if not geom:
+            # The poller may not have reached this alert's zones yet; look them up now.
+            zs = ZoneShapes(db, cfg.nws_base_url, cfg.user_agent)
+            item = pending_from_alert(a)
+            if item:
+                zs.fill([item], budget=60)
+                geom, missing = zs.shape_for(item["zones"])
+                complete = not missing
+        if not geom:
+            return Response("no shape", status=404, mimetype="text/plain")
+        if renderer is None:
+            renderer = images.Renderer(cache_dir(cfg), cfg.user_agent, cfg.map_key)
+        data = renderer.cached_render(a, geom) if complete else renderer.render(a, geom)
+        resp = Response(data, mimetype="image/png")
+        resp.headers["Cache-Control"] = "public, max-age=86400" if complete else "no-cache"
+        return resp
 
     # ---- feed API ------------------------------------------------------------
     def _list_arg(name: str) -> list[str]:

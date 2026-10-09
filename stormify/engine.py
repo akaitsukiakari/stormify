@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from .config import Config
 from .db import Database, utcnow
+from . import images
 from .delivery import Channel, DeliveryError, Notification, channels_for_user
 from .models import SIGNIFICANT_TAGS, Alert
 from .rules import Rule, RuleError, evaluate, load_rules
@@ -98,8 +99,13 @@ class Engine:
         body = render((rule.body_template if rule else None) or default_body, v)
         if "emergency" in a.tag_set:
             priority = 5
-        click = f"{self.cfg.public_url.rstrip('/')}/?alert={quote(a.id, safe='')}" if self.cfg.public_url else None
-        return Notification(title=title, body=body, priority=priority, click_url=click,
+        base = self.cfg.public_url.rstrip("/")
+        click = f"{base}/?alert={quote(a.id, safe='')}" if base else None
+        image = None
+        # The phone fetches the picture from the dashboard, so it needs a public address to reach.
+        if base and self.cfg.notification_images and images.available() and images.drawable(a) and status != "CANCELLED":
+            image = f"{base}/img/{self.db.image_token(a.id)}.png"
+        return Notification(title=title, body=body, priority=priority, click_url=click, image_url=image,
                             group=a.thread_key, is_test="test" in a.tag_set,
                             tags=[t for t in a.tags if t != "test"])
 
