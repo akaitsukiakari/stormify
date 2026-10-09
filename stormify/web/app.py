@@ -17,6 +17,10 @@ from ..health import health
 from ..rules import RuleError, load_rules
 from ..timefmt import DEFAULT_DISPLAY
 
+# Most alerts one /api/alerts call returns. A busy 24 h nationwide is several hundred; this keeps
+# "Last 7 days" or "All time" from asking the Pi to serialize tens of thousands at once.
+FEED_LIMIT = 2000
+
 
 def create_app(cfg: Config, db: Database) -> Flask:
     app = Flask(__name__)
@@ -90,8 +94,7 @@ def create_app(cfg: Config, db: Database) -> Flask:
         if hours and hours > 0:
             since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
         action = request.args.get("action") or None
-        rows = db.query_feed(
-            user["id"],
+        filters = dict(
             since=since,
             events=_list_arg("event"),
             offices=[o.upper() for o in _list_arg("office")],
@@ -99,16 +102,31 @@ def create_app(cfg: Config, db: Database) -> Flask:
             action=action if action in ("push", "log", "failed") else None,
             q=(request.args.get("q") or "").strip() or None,
             active_only=request.args.get("active") == "1",
-            limit=min(request.args.get("limit", type=int, default=300), 2000),
         )
+        limit = max(1, min(request.args.get("limit", type=int, default=FEED_LIMIT), FEED_LIMIT))
+        # The dashboard asks for lite rows (no long text) and fetches full text per alert on demand.
+        lite = request.args.get("lite") == "1"
+        rows = db.query_feed(user["id"], limit=limit, lite=lite, **filters)
+        total = len(rows) if len(rows) < limit else db.count_feed(user["id"], **filters)
         alert_id = request.args.get("id")
         if alert_id and not any(r["id"] == alert_id for r in rows):
             extra = db.get_alert(alert_id)
             if extra:
                 d = extra.to_dict()
+                if lite:
+                    for k in db.LITE_DROP:
+                        d.pop(k, None)
                 d.update(first_seen="", action="log", reason="", matched_rules=[])
                 rows.insert(0, d)
-        return jsonify(alerts=rows)
+        return jsonify(alerts=rows, total=total, limit=limit)
+
+    @app.route("/api/alert")
+    @login_required
+    def api_alert(user):
+        a = db.get_alert(request.args.get("id") or "")
+        if not a:
+            return jsonify(error="not found"), 404
+        return jsonify(alert=a.to_dict())
 
     @app.route("/api/meta")
     @login_required

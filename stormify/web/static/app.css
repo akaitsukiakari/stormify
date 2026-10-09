@@ -88,6 +88,23 @@ body.dash { display: flex; flex-direction: column; }
 .badge.tag { background: #ff2e63; border-color: #ff2e63; color: #fff; }
 .badge.upd { color: var(--accent); border-color: var(--accent); }
 .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+.empty.small { padding: 14px 16px 24px; }
+.more { display: block; width: calc(100% - 28px); margin: 12px 14px; padding: 10px; }
+
+/* Phone: a tapped polygon opens here, over the bottom of the screen, instead of scrolling the list. */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1001; max-height: 50vh; overflow-y: auto;
+  background: var(--bg); border-top: 1px solid var(--line); border-radius: 14px 14px 0 0;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.5); padding-bottom: env(safe-area-inset-bottom);
+}
+.sheet[hidden] { display: none; }
+.sheet-head {
+  position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.sheet-head button { padding: 4px 10px; }
+.sheet .card { cursor: default; border-bottom: none; }
+.sheet .card:hover { background: none; }
 
 .leaflet-container { background: #0e1218; font: inherit; }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--text); }

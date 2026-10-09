@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 CREATE INDEX IF NOT EXISTS alerts_sent ON alerts(sent);
 CREATE INDEX IF NOT EXISTS alerts_thread ON alerts(thread_key);
 CREATE INDEX IF NOT EXISTS alerts_event ON alerts(event);
+CREATE INDEX IF NOT EXISTS alerts_first_seen ON alerts(first_seen);
 
 -- What each user's rules decided about each alert (drives the per-user feed).
 CREATE TABLE IF NOT EXISTS decisions (
@@ -241,13 +242,16 @@ class Database:
             (alert_id, user_id, action, reason, json.dumps(rule_names), utcnow()),
         )
 
-    def query_feed(self, user_id: int, since: str | None = None, until: str | None = None,
-                   events: list[str] | None = None, offices: list[str] | None = None,
-                   kinds: list[str] | None = None, action: str | None = None, q: str | None = None,
-                   active_only: bool = False, limit: int = 300) -> list[dict]:
-        sql = ["SELECT a.data_json, a.first_seen, d.action, d.reason, d.rules_json FROM alerts a"
-               " LEFT JOIN decisions d ON d.alert_id=a.id AND d.user_id=? WHERE 1=1"]
-        args: list[Any] = [user_id]
+    # Long text and code lists the dashboard list and map never show. Dropped inside SQLite
+    # (fast C) so the Pi doesn't parse and re-serialize every alert's full text on each refresh;
+    # the dashboard fetches one alert's full text when you open it.
+    LITE_DROP = ("description", "instruction", "nws_headline", "zones", "same", "vtec", "references")
+
+    def _feed_where(self, since: str | None, until: str | None, events: list[str] | None,
+                    offices: list[str] | None, kinds: list[str] | None, action: str | None,
+                    q: str | None, active_only: bool) -> tuple[list[str], list[Any]]:
+        sql: list[str] = ["WHERE 1=1"]
+        args: list[Any] = []
         if since:
             sql.append("AND a.first_seen >= ?")
             args.append(since)
@@ -268,10 +272,21 @@ class Database:
             # Text products never expire, so they'd sit in "active" forever; leave them out.
             sql.append("AND a.kind != 'Product'"
                        " AND (a.expires IS NULL OR a.expires = '' OR julianday(a.expires) > julianday('now'))")
-        sql.append("ORDER BY a.first_seen DESC, a.sent DESC LIMIT ?")
-        args.append(limit)
+        return sql, args
+
+    def query_feed(self, user_id: int, since: str | None = None, until: str | None = None,
+                   events: list[str] | None = None, offices: list[str] | None = None,
+                   kinds: list[str] | None = None, action: str | None = None, q: str | None = None,
+                   active_only: bool = False, limit: int = 300, lite: bool = False) -> list[dict]:
+        where, args = self._feed_where(since, until, events, offices, kinds, action, q, active_only)
+        data = "a.data_json"
+        if lite:
+            data = "json_remove(a.data_json, " + ", ".join(f"'$.{k}'" for k in self.LITE_DROP) + ")"
+        sql = [f"SELECT {data} AS data_json, a.first_seen, d.action, d.reason, d.rules_json FROM alerts a"
+               " LEFT JOIN decisions d ON d.alert_id=a.id AND d.user_id=?", *where,
+               "ORDER BY a.first_seen DESC, a.sent DESC LIMIT ?"]
         out = []
-        for r in self.conn.execute(" ".join(sql), args):
+        for r in self.conn.execute(" ".join(sql), [user_id, *args, limit]):
             d = json.loads(r["data_json"])
             d["first_seen"] = r["first_seen"]
             d["action"] = r["action"] or "log"
@@ -279,6 +294,15 @@ class Database:
             d["matched_rules"] = json.loads(r["rules_json"] or "[]")
             out.append(d)
         return out
+
+    def count_feed(self, user_id: int, since: str | None = None, until: str | None = None,
+                   events: list[str] | None = None, offices: list[str] | None = None,
+                   kinds: list[str] | None = None, action: str | None = None, q: str | None = None,
+                   active_only: bool = False) -> int:
+        where, args = self._feed_where(since, until, events, offices, kinds, action, q, active_only)
+        join = " LEFT JOIN decisions d ON d.alert_id=a.id AND d.user_id=?" if action else ""
+        sql = " ".join(["SELECT COUNT(*) FROM alerts a" + join, *where])
+        return self.conn.execute(sql, ([user_id] if action else []) + args).fetchone()[0]
 
     def distinct_values(self, column: str) -> list[str]:
         assert column in ("event", "office", "kind")

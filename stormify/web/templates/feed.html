@@ -52,6 +52,11 @@
   </div>
 </main>
 
+<aside class="sheet" id="sheet" hidden aria-label="Alert details">
+  <div class="sheet-head"><span class="muted small">Tapped on the map</span><button class="ghost" id="sheet-close" aria-label="Close">✕</button></div>
+  <div id="sheet-body"></div>
+</aside>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
