@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS alerts (
 CREATE INDEX IF NOT EXISTS alerts_sent ON alerts(sent);
 CREATE INDEX IF NOT EXISTS alerts_thread ON alerts(thread_key);
 CREATE INDEX IF NOT EXISTS alerts_event ON alerts(event);
+CREATE INDEX IF NOT EXISTS alerts_office ON alerts(office);
+CREATE INDEX IF NOT EXISTS alerts_kind ON alerts(kind);
 CREATE INDEX IF NOT EXISTS alerts_first_seen ON alerts(first_seen);
 
 -- What each user's rules decided about each alert (drives the per-user feed).
@@ -245,7 +247,21 @@ class Database:
     # Long text and code lists the dashboard list and map never show. Dropped inside SQLite
     # (fast C) so the Pi doesn't parse and re-serialize every alert's full text on each refresh;
     # the dashboard fetches one alert's full text when you open it.
-    LITE_DROP = ("description", "instruction", "nws_headline", "zones", "same", "vtec", "references")
+    LITE_DROP = ("description", "instruction", "nws_headline", "zones", "same", "vtec", "references",
+                 "params", "certainty", "urgency", "effective", "onset", "states", "status", "url",
+                 "thread_key", "severity", "vtec_action")
+    # The only raw parameter the dashboard reads (an NHC storm's name). NWS parameters carry long
+    # reference lists that used to be most of the payload, so lite rows keep just this one.
+    LITE_PARAMS = ("storm",)
+
+    def lite_dict(self, d: dict) -> dict:
+        """Python version of the lite trim, for a row that didn't come through query_feed_json."""
+        params = d.get("params") or {}
+        d = {k: v for k, v in d.items() if k not in self.LITE_DROP}
+        if d.get("source") != "nhc":
+            d.pop("headline", None)
+        d["params"] = {k: params.get(k) for k in self.LITE_PARAMS}
+        return d
 
     def _feed_where(self, since: str | None, until: str | None, events: list[str] | None,
                     offices: list[str] | None, kinds: list[str] | None, action: str | None,
@@ -277,12 +293,9 @@ class Database:
     def query_feed(self, user_id: int, since: str | None = None, until: str | None = None,
                    events: list[str] | None = None, offices: list[str] | None = None,
                    kinds: list[str] | None = None, action: str | None = None, q: str | None = None,
-                   active_only: bool = False, limit: int = 300, lite: bool = False) -> list[dict]:
+                   active_only: bool = False, limit: int = 300) -> list[dict]:
         where, args = self._feed_where(since, until, events, offices, kinds, action, q, active_only)
-        data = "a.data_json"
-        if lite:
-            data = "json_remove(a.data_json, " + ", ".join(f"'$.{k}'" for k in self.LITE_DROP) + ")"
-        sql = [f"SELECT {data} AS data_json, a.first_seen, d.action, d.reason, d.rules_json FROM alerts a"
+        sql = ["SELECT a.data_json, a.first_seen, d.action, d.reason, d.rules_json FROM alerts a"
                " LEFT JOIN decisions d ON d.alert_id=a.id AND d.user_id=?", *where,
                "ORDER BY a.first_seen DESC, a.sent DESC LIMIT ?"]
         out = []
@@ -294,6 +307,29 @@ class Database:
             d["matched_rules"] = json.loads(r["rules_json"] or "[]")
             out.append(d)
         return out
+
+    def query_feed_json(self, user_id: int, since: str | None = None, until: str | None = None,
+                        events: list[str] | None = None, offices: list[str] | None = None,
+                        kinds: list[str] | None = None, action: str | None = None, q: str | None = None,
+                        active_only: bool = False, limit: int = 300) -> list[tuple[str, str]]:
+        """Lite feed rows as (id, JSON text), built entirely inside SQLite.
+
+        Same rows as query_feed minus the long text (fetched per alert when opened), but Python
+        never parses or re-serializes them, which was most of the work on a Pi Zero once a busy
+        day put a couple thousand alerts in the feed.
+        """
+        where, args = self._feed_where(since, until, events, offices, kinds, action, q, active_only)
+        # Only NHC products are labeled by their headline; NWS headlines just repeat the card.
+        drop = ", ".join([*(f"'$.{k}'" for k in self.LITE_DROP),
+                          "CASE WHEN a.source = 'nhc' THEN '$.__keep' ELSE '$.headline' END"])
+        keep = ", ".join(f"'{k}', json_extract(a.data_json, '$.params.{k}')" for k in self.LITE_PARAMS)
+        data = (f"json_set(json_remove(a.data_json, {drop}), '$.params', json_object({keep}),"
+                " '$.first_seen', a.first_seen, '$.action', coalesce(d.action, 'log'),"
+                " '$.reason', coalesce(d.reason, ''), '$.matched_rules', json(coalesce(d.rules_json, '[]')))")
+        sql = [f"SELECT a.id, {data} FROM alerts a"
+               " LEFT JOIN decisions d ON d.alert_id=a.id AND d.user_id=?", *where,
+               "ORDER BY a.first_seen DESC, a.sent DESC LIMIT ?"]
+        return [(r[0], r[1]) for r in self.conn.execute(" ".join(sql), [user_id, *args, limit])]
 
     def count_feed(self, user_id: int, since: str | None = None, until: str | None = None,
                    events: list[str] | None = None, offices: list[str] | None = None,

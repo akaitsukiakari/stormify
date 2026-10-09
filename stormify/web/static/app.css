@@ -44,6 +44,16 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px;
   border-bottom: 1px solid var(--line); background: var(--panel);
 }
+/* The toggle sits inline with the filters while they're open; collapsed, it's one short row
+   with a summary of what's applied. */
+.filters-bar, .filters-body { display: contents; }
+.filters.collapsed .filters-body { display: none; }
+.filters.collapsed { flex-wrap: nowrap; align-items: center; padding: 6px 16px; }
+#f-summary { display: none; }
+.filters.collapsed #f-summary { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#f-toggle { flex: none; }
+#f-toggle::after { content: " ▴"; color: var(--muted); }
+.filters.collapsed #f-toggle::after { content: " ▾"; }
 .filters input { min-width: 150px; }
 .filters input[type="checkbox"] { min-width: 0; padding: 0; }
 .chips { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -72,6 +82,10 @@ body.dash { display: flex; flex-direction: column; }
 .card:hover { background: var(--panel); }
 .card.sel { background: var(--panel-2); }
 .card .title { font-weight: 700; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.card .jump {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; font-size: 12px; font-weight: 600; color: var(--accent);
+}
 .card .meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
 .card .times { font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .card .reason { font-size: 11px; color: var(--muted); margin-top: 4px; }

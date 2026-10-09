@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash
 
 from stormify.db import utcnow
 from stormify.engine import Engine
+from stormify.models import Alert
 from stormify.sources.nws import parse_collection
 from stormify.web import create_app
 
@@ -105,3 +106,50 @@ def test_feed_total_lite_and_single_alert(client):
     one = client.get("/api/alert", query_string={"id": lite[0]["id"]}).json["alert"]
     assert one["id"] == lite[0]["id"] and "description" in one
     assert client.get("/api/alert?id=nope").status_code == 404
+
+
+def _add_nhc(db):
+    db.insert_alert(Alert(id="nhc1", source="nhc", event="Tropical Cyclone Public Advisory", kind="Advisory",
+                          office="NHC", headline="Hurricane Test Public Advisory Number 4",
+                          sent="2026-10-01T21:00:00-04:00", description="long text",
+                          params={"storm": "Hurricane Test", "atcf": "AL092026"}))
+
+
+def test_lite_feed_matches_full_feed_without_the_bulk(client, db):
+    _add_nhc(db)
+    login(client)
+    full = client.get("/api/alerts?hours=0").json
+    lite = client.get("/api/alerts?hours=0&lite=1").json
+    assert [a["id"] for a in lite["alerts"]] == [a["id"] for a in full["alerts"]]
+    assert lite["total"] == full["total"]
+    for f, a in zip(full["alerts"], lite["alerts"]):
+        for k in ("event", "office", "kind", "tags", "geometry", "area_desc", "sent", "expires", "action", "reason"):
+            assert a[k] == f[k], k
+    nws = next(a for a in lite["alerts"] if a["source"] == "nws")
+    assert nws["params"] == {"storm": None} and "headline" not in nws
+    nhc = next(a for a in lite["alerts"] if a["id"] == "nhc1")
+    assert nhc["params"] == {"storm": "Hurricane Test"}
+    assert nhc["headline"] == "Hurricane Test Public Advisory Number 4"
+
+
+def test_lite_feed_answers_304_when_nothing_changed(client):
+    login(client)
+    r = client.get("/api/alerts?hours=0&lite=1")
+    assert r.headers["ETag"]
+    again = client.get("/api/alerts?hours=0&lite=1", headers={"If-None-Match": r.headers["ETag"]})
+    assert again.status_code == 304 and again.data == b""
+
+
+def test_selected_alert_outside_the_filters_is_added_trimmed(client, db):
+    _add_nhc(db)
+    login(client)
+    first = client.get("/api/alerts?hours=0&lite=1&kind=Watch&id=nhc1").json["alerts"][0]
+    assert first["id"] == "nhc1" and "description" not in first
+    assert first["params"] == {"storm": "Hurricane Test"}
+
+
+def test_offices_script_loads_before_the_dashboard(client):
+    login(client)
+    page = client.get("/").data
+    assert page.index(b"offices.js") < page.index(b"app.js")
+    assert b"BOU:" in client.get("/static/offices.js").data

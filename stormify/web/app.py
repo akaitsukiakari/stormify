@@ -104,21 +104,35 @@ def create_app(cfg: Config, db: Database) -> Flask:
             active_only=request.args.get("active") == "1",
         )
         limit = max(1, min(request.args.get("limit", type=int, default=FEED_LIMIT), FEED_LIMIT))
-        # The dashboard asks for lite rows (no long text) and fetches full text per alert on demand.
-        lite = request.args.get("lite") == "1"
-        rows = db.query_feed(user["id"], limit=limit, lite=lite, **filters)
-        total = len(rows) if len(rows) < limit else db.count_feed(user["id"], **filters)
         alert_id = request.args.get("id")
-        if alert_id and not any(r["id"] == alert_id for r in rows):
+        # The dashboard asks for lite rows (no long text) and fetches full text per alert on demand.
+        if request.args.get("lite") != "1":
+            rows = db.query_feed(user["id"], limit=limit, **filters)
+            total = len(rows) if len(rows) < limit else db.count_feed(user["id"], **filters)
+            if alert_id and not any(r["id"] == alert_id for r in rows):
+                extra = db.get_alert(alert_id)
+                if extra:
+                    rows.insert(0, {**extra.to_dict(), "first_seen": "", "action": "log",
+                                    "reason": "", "matched_rules": []})
+            return jsonify(alerts=rows, total=total, limit=limit)
+
+        # Lite rows arrive from SQLite as finished JSON text; just stitch them together.
+        lite = db.query_feed_json(user["id"], limit=limit, **filters)
+        total = len(lite) if len(lite) < limit else db.count_feed(user["id"], **filters)
+        parts = [text for _, text in lite]
+        if alert_id and not any(i == alert_id for i, _ in lite):
             extra = db.get_alert(alert_id)
             if extra:
-                d = extra.to_dict()
-                if lite:
-                    for k in db.LITE_DROP:
-                        d.pop(k, None)
+                d = db.lite_dict(extra.to_dict())
                 d.update(first_seen="", action="log", reason="", matched_rules=[])
-                rows.insert(0, d)
-        return jsonify(alerts=rows, total=total, limit=limit)
+                parts.insert(0, json.dumps(d))
+        resp = Response(f'{{"alerts":[{",".join(parts)}],"total":{total},"limit":{limit}}}',
+                        mimetype="application/json")
+        # The dashboard refreshes every minute and usually nothing has changed: answer those with a
+        # bodyless 304 so the Pi isn't pushing megabytes over Wi-Fi and the tunnel for nothing.
+        resp.headers["Cache-Control"] = "private, no-cache"
+        resp.add_etag()
+        return resp.make_conditional(request)
 
     @app.route("/api/alert")
     @login_required
