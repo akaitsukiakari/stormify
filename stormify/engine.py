@@ -34,6 +34,7 @@ class Result:
     logged: int = 0
     failed: int = 0
     notifications: list[tuple[str, Notification]] = field(default_factory=list)  # (user, n) when dry_run
+    new: list[Alert] = field(default_factory=list)
 
 
 def snapshot(a: Alert) -> dict:
@@ -165,6 +166,7 @@ class Engine:
         new = [a for a in alerts if a.id not in known]
         res.seen_alerts = len(alerts) - len(new)
         res.new_alerts = len(new)
+        res.new = new
         if not new:
             return res
 

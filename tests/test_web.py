@@ -126,7 +126,7 @@ def test_lite_feed_matches_full_feed_without_the_bulk(client, db):
         for k in ("event", "office", "kind", "tags", "geometry", "area_desc", "sent", "expires", "action", "reason"):
             assert a[k] == f[k], k
     nws = next(a for a in lite["alerts"] if a["source"] == "nws")
-    assert nws["params"] == {"storm": None} and "headline" not in nws
+    assert nws["params"] == {} and "headline" not in nws
     nhc = next(a for a in lite["alerts"] if a["id"] == "nhc1")
     assert nhc["params"] == {"storm": "Hurricane Test"}
     assert nhc["headline"] == "Hurricane Test Public Advisory Number 4"

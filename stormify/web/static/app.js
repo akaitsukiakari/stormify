@@ -25,20 +25,30 @@
     "Storm Surge Watch": "#db7ff7",
     "Tropical Cyclone Public Advisory": "#ff4fa3",
     "Tropical Cyclone Update": "#ff4fa3",
+    "Mesoscale Discussion": "#4fc3f7",
   };
+  // SPC's own categorical outlook colors, lowest to highest risk.
+  const RISK_COLORS = { TSTM: "#c1e9c1", MRGL: "#66a366", SLGT: "#ffe066", ENH: "#ffa366", MDT: "#e06666", HIGH: "#ee99ee" };
+  const RISK_NAMES = { TSTM: "Thunderstorms", MRGL: "Marginal", SLGT: "Slight", ENH: "Enhanced", MDT: "Moderate", HIGH: "High" };
   const KIND_COLORS = {
     Emergency: "#ff2e63", Warning: "#ff6b3d", Watch: "#ffd23f", Advisory: "#5eb3ff",
-    Statement: "#b4a7ff", Outlook: "#7fd4c1", Message: "#8b94a5", Product: "#c9b88a", Other: "#8b94a5",
+    Statement: "#b4a7ff", Outlook: "#7fd4c1", Discussion: "#4fc3f7", Message: "#8b94a5", Product: "#c9b88a", Other: "#8b94a5",
   };
-  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Product"];
+  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Product"];
   const TAG_LABELS = {
     emergency: "EMERGENCY", pds: "PDS", considerable: "CONSIDERABLE", destructive: "DESTRUCTIVE",
     observed: "OBSERVED", "tornado-possible": "TOR POSSIBLE", test: "TEST",
     "major-hurricane": "MAJOR", "hurricane-warning": "HU WARNING", "surge-warning": "SURGE WARNING",
     "ts-warning": "TS WARNING", "hurricane-watch": "HU WATCH", "surge-watch": "SURGE WATCH", "ts-watch": "TS WATCH",
+    "watch-likely": "WATCH LIKELY", "risk-mdt": "MODERATE RISK", "risk-high": "HIGH RISK",
+    g3: "G3", g4: "G4", g5: "G5", s3: "S3", s4: "S4", s5: "S5", r3: "R3", r4: "R4", r5: "R5",
   };
-  // NHC products read better by their own title ("Tropical Storm Isaias Public Advisory Number 4").
-  const labelFor = (a) => (a.source === "nhc" && a.headline) ? a.headline : a.event;
+  // NHC, SPC and SWPC products read better by their own title ("Tropical Storm Isaias Public Advisory
+  // Number 4", "Day 1: Enhanced risk", "Watch: Geomagnetic Storm Category G3 Predicted").
+  const TITLED = new Set(["nhc", "spc", "swpc"]);
+  const labelFor = (a) => (TITLED.has(a.source) && a.headline) ? a.headline : a.event;
+  const isOutlook = (a) => a.source === "spc" && a.kind === "Outlook";
+  const topRisk = (a) => ((a.params || {}).risk_labels || []).slice(-1)[0];
 
   // "BOU (Denver/Boulder, CO)": keep the code, add where it is when we know.
   const OFFICES = window.STORMIFY_OFFICES || {};
@@ -46,7 +56,8 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const colorFor = (a) => (a.tags || []).includes("emergency") ? "#ff2e63" : (EVENT_COLORS[a.event] || KIND_COLORS[a.kind] || "#8b94a5");
+  const colorFor = (a) => (a.tags || []).includes("emergency") ? "#ff2e63"
+    : (isOutlook(a) && RISK_COLORS[topRisk(a)]) || EVENT_COLORS[a.event] || KIND_COLORS[a.kind] || "#8b94a5";
 
   let meta = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, time_display: ["local", "event", "zulu"] };
   let alerts = [];
@@ -212,21 +223,14 @@
       list.innerHTML = `<div class="empty">Nothing here for these filters.<br>Quiet skies, or widen the time range.</div>`;
       return;
     }
-    // Draw watches under warnings under emergencies.
-    const order = { Watch: 0, Advisory: 1, Statement: 1, Warning: 2, Emergency: 3 };
-    [...alerts].sort((a, b) => (order[a.kind] ?? 1) - (order[b.kind] ?? 1)).forEach((a) => {
-      if (!a.geometry) return;
-      const c = colorFor(a);
-      const layer = L.geoJSON(a.geometry, {
-        style: { color: c, weight: a.kind === "Watch" ? 1.5 : 2.5, fillColor: c, fillOpacity: a.kind === "Watch" ? 0.08 : 0.22 },
-        // Storm centers (NHC advisories) are points; their forecast track is a line.
-        pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
-      });
-      layer.on("click", (e) => { L.DomEvent.stopPropagation(e); mapTap(a); });
-      layer.bindTooltip(`${esc(labelFor(a))} · ${esc(officeLabel(a.office))}`, { sticky: true });
-      layer.addTo(polyGroup);
-      layer.bounds = layer.getBounds();  // the legend checks these on every pan; work them out once
-      layers.set(a.id, layer);
+    // Only the newest Day 1 outlook is drawn by default: outlooks cover half the country, and every
+    // issuance plus Days 2 and 3 on top of each other would bury everything else. Older ones and
+    // Days 2-3 draw when you pick them.
+    newestDay1 = alerts.find((a) => isOutlook(a) && (a.params || {}).day === 1)?.id;
+    // Draw outlooks under watches under warnings under emergencies.
+    [...alerts].sort((a, b) => drawOrder(a) - drawOrder(b)).forEach((a) => {
+      if (isOutlook(a) && a.id !== newestDay1 && a.id !== selected) return;
+      addLayer(a);
     });
     highlight(selected);
     renderLegend();
@@ -238,6 +242,40 @@
     } else if (polyGroup.getLayers().length && !map._userMoved) {
       map.fitBounds(polyGroup.getBounds(), { maxZoom: 7, padding: [20, 20] });
     }
+  }
+
+  let newestDay1 = null;
+  const ORDER = { Watch: 0, Advisory: 1, Statement: 1, Discussion: 1, Warning: 2, Emergency: 3 };
+  const drawOrder = (a) => isOutlook(a) ? -1 : (ORDER[a.kind] ?? 1);
+
+  function addLayer(a) {
+    if (!a.geometry || layers.has(a.id)) return layers.get(a.id);
+    const c = colorFor(a);
+    const watch = a.kind === "Watch";
+    // Shapes built from zone outlines (no polygon of their own) get a dashed edge.
+    const zoned = (a.params || {}).geometry_source === "zones";
+    let data = a.geometry, style = { color: c, weight: watch ? 1.5 : 2.5, fillColor: c, fillOpacity: watch ? 0.08 : 0.22, dashArray: zoned ? "5 4" : null };
+    if (isOutlook(a)) {
+      // One feature per risk area so each gets SPC's color.
+      const labels = (a.params || {}).risk_labels || [];
+      data = { type: "FeatureCollection", features: (a.geometry.geometries || []).map((g, i) => ({ type: "Feature", geometry: g, properties: { risk: labels[i] } })) };
+      style = (f) => {
+        const rc = RISK_COLORS[f.properties.risk] || c;
+        return { color: rc, weight: 1.5, fillColor: rc, fillOpacity: 0.18 };
+      };
+    }
+    const layer = L.geoJSON(data, {
+      style,
+      // Storm centers (NHC advisories) are points; their forecast track is a line.
+      pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
+    });
+    layer.on("click", (e) => { L.DomEvent.stopPropagation(e); mapTap(a); });
+    layer.bindTooltip(`${esc(labelFor(a))} · ${esc(officeLabel(a.office))}`, { sticky: true });
+    layer.addTo(polyGroup);
+    if (isOutlook(a)) layer.bringToBack();
+    layer.bounds = layer.getBounds();  // the legend checks these on every pan; work them out once
+    layers.set(a.id, layer);
+    return layer;
   }
 
   const PIN = `<svg viewBox="0 0 12 16" width="10" height="13" aria-hidden="true"><path d="M6 0a6 6 0 0 0-6 6c0 4.5 6 10 6 10s6-5.5 6-10a6 6 0 0 0-6-6zm0 8.5A2.5 2.5 0 1 1 6 3.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg>`;
@@ -318,7 +356,7 @@
   // the map, so scroll up to it and show the alert in the sheet; ✕ brings you back to your place.
   function jump(id) {
     const a = alerts.find((x) => x.id === id);
-    const layer = layers.get(id);
+    const layer = a && addLayer(a);
     if (!a || !layer) return;
     map._userMoved = true;  // stay put on the next refresh
     if (mobile.matches) {
@@ -350,7 +388,7 @@
       return `<svg viewBox="0 0 28 14" width="28" height="14"><line x1="7" y1="7" x2="27" y2="7" stroke="${e.color}" stroke-width="2.5"/>`
         + `<circle cx="7" cy="7" r="5" fill="${e.color}" fill-opacity="0.7" stroke="${e.color}" stroke-width="2"/></svg>`;
     }
-    const watch = e.kind === "Watch";
+    const watch = e.kind === "Watch" || e.kind === "Outlook";
     return `<svg viewBox="0 0 28 14" width="28" height="14"><rect x="1.5" y="1.5" width="25" height="11" rx="2" fill="${e.color}" `
       + `fill-opacity="${watch ? 0.15 : 0.35}" stroke="${e.color}" stroke-width="${watch ? 1.5 : 2.5}"/></svg>`;
   }
@@ -364,13 +402,21 @@
     for (const a of alerts) {
       const layer = layers.get(a.id);
       if (!layer || !layer.bounds.isValid() || !view.intersects(layer.bounds)) continue;
+      if (isOutlook(a)) {
+        // One row per risk level drawn, SPC's colors.
+        for (const r of (a.params || {}).risk_labels || []) {
+          const key = "risk:" + r;
+          if (!rows.has(key)) rows.set(key, { kind: "Outlook", color: RISK_COLORS[r] || colorFor(a), n: 1, rank: 10 + Object.keys(RISK_COLORS).indexOf(r) * -0.01, label: `Day ${(a.params || {}).day || ""} outlook: ${RISK_NAMES[r] || r}`, zoned: false });
+        }
+        continue;
+      }
       const storm = a.source === "nhc" ? ((a.params || {}).storm || a.event) : "";
       const emergency = (a.tags || []).includes("emergency");
       const key = storm ? "nhc:" + storm : a.event + (emergency ? ":emergency" : "");
       const row = rows.get(key);
-      if (row) { row.n += 1; continue; }
+      if (row) { row.n += 1; if ((a.params || {}).geometry_source === "zones") row.zoned = true; continue; }
       rows.set(key, {
-        storm, kind: a.kind, color: colorFor(a), n: 1,
+        storm, kind: a.kind, color: colorFor(a), n: 1, zoned: (a.params || {}).geometry_source === "zones",
         label: storm || (emergency && !/emergency/i.test(a.event) ? `${a.event} (emergency)` : a.event),
         rank: emergency ? -1 : (rank[a.kind] ?? 2),
       });
@@ -379,11 +425,13 @@
     el.hidden = false;
     const items = [...rows.values()].sort((x, y) => (x.storm ? 0 : 1) - (y.storm ? 0 : 1) || x.rank - y.rank || x.label.localeCompare(y.label));
     const hasStorm = items.some((e) => e.storm);
+    const hasZoned = items.some((e) => e.zoned);
     const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: meta.timezone, timeZoneName: "short" });
     el.innerHTML = `<div class="legend-head"><span>Legend</span><span class="legend-toggle" aria-hidden="true"></span></div>
       <div class="legend-body">
         ${items.map((e) => `<div class="legend-row">${swatch(e)}<span>${esc(e.label)}${e.n > 1 ? ` <span class="muted">×${e.n}</span>` : ""}</span></div>`).join("")}
         ${hasStorm ? `<div class="legend-note">Dot: storm center · line: forecast track</div>` : ""}
+        ${hasZoned ? `<div class="legend-note">Dashed: drawn from the alert's zones</div>` : ""}
         <div class="legend-note">Stormify · ${esc(now)}</div>
       </div>`;
   }
@@ -399,7 +447,8 @@
       if (on && el.classList.contains("open")) fillBody(id);
       if (on && !toggle) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
-    const layer = layers.get(id);
+    const pick = alerts.find((x) => x.id === id);
+    const layer = pick && addLayer(pick);
     highlight(id);
     if (layer) map.fitBounds(layer.bounds, { maxZoom, padding: [30, 30] });
     const u = new URL(location); u.searchParams.set("alert", id); history.replaceState(null, "", u);

@@ -149,7 +149,8 @@ def parse_feature(feature: dict) -> Alert:
         kind=kind_for_event(event, set(tags)),
         url=feature.get("id") or "",
         geometry=feature.get("geometry"),
-        params={k: v for k, v in params.items() if k not in ("VTEC",)},
+        params={**{k: v for k, v in params.items() if k not in ("VTEC",)},
+                "affected_zones": list(p.get("affectedZones") or [])},
     )
 
 
