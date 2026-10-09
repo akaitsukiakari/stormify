@@ -62,6 +62,7 @@ CREATE INDEX IF NOT EXISTS alerts_event ON alerts(event);
 CREATE INDEX IF NOT EXISTS alerts_office ON alerts(office);
 CREATE INDEX IF NOT EXISTS alerts_kind ON alerts(kind);
 CREATE INDEX IF NOT EXISTS alerts_first_seen ON alerts(first_seen);
+CREATE INDEX IF NOT EXISTS alerts_source ON alerts(source);
 
 -- What each user's rules decided about each alert (drives the per-user feed).
 CREATE TABLE IF NOT EXISTS decisions (
@@ -205,6 +206,9 @@ class Database:
     # ---- alerts --------------------------------------------------------
     def has_any_alerts(self) -> bool:
         return self.conn.execute("SELECT 1 FROM alerts LIMIT 1").fetchone() is not None
+
+    def has_source(self, source: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM alerts WHERE source=? LIMIT 1", (source,)).fetchone() is not None
 
     def known_alert_ids(self, ids: list[str]) -> set[str]:
         known: set[str] = set()

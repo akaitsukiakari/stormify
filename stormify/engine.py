@@ -38,7 +38,7 @@ class Result:
 
 def snapshot(a: Alert) -> dict:
     return {"severity_rank": a.severity_rank, "tags": a.tags, "hail_in": a.hail_in,
-            "wind_mph": a.wind_mph, "event": a.event}
+            "wind_mph": a.wind_mph, "event": a.event, "level": a.params.get("level")}
 
 
 def is_significant(prior: dict, a: Alert) -> bool:
@@ -51,6 +51,10 @@ def is_significant(prior: dict, a: Alert) -> bool:
     if (a.hail_in or 0) > (prior.get("hail_in") or 0):
         return True
     if (a.wind_mph or 0) > (prior.get("wind_mph") or 0):
+        return True
+    # SPC outlook risk category or SWPC scale level going up (Slight -> Enhanced, G2 -> G3).
+    level = a.params.get("level")
+    if isinstance(level, int) and isinstance(prior.get("level"), int) and level > prior["level"]:
         return True
     return a.event != prior.get("event", a.event)
 

@@ -11,7 +11,7 @@ import requests
 from .config import Config
 from .db import Database, utcnow
 from .engine import Engine
-from .sources import NHCSource, NWSAlertsSource, NWSProductsSource, Source
+from .sources import NHCSource, NWSAlertsSource, NWSProductsSource, SPCSource, Source, SWPCSource
 from .sources.nws_products import DEFAULT_TYPES
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,11 @@ class Poller:
                     cfg.products_types or DEFAULT_TYPES, cfg.products_interval, known_ids=db.known_alert_ids))
             if cfg.nhc_enabled:
                 sources.append(NHCSource(cfg.nhc_base_url, cfg.user_agent, cfg.nhc_basins))
+            if cfg.spc_enabled:
+                sources.append(SPCSource(cfg.spc_base_url, cfg.nws_base_url, cfg.user_agent,
+                                         tuple(cfg.spc_outlook_days), cfg.spc_mds, known_ids=db.known_alert_ids))
+            if cfg.swpc_enabled:
+                sources.append(SWPCSource(cfg.swpc_url, cfg.user_agent))
         self.sources = sources
         self.engine = engine or Engine(db, cfg, tz_lookup=self.nws.zone_timezone)
         self._stop = False
@@ -48,7 +53,13 @@ class Poller:
                 continue
             if alerts is None:  # not modified
                 continue
-            res = self.engine.process(alerts)
+            # A source turned on for the first time (say SWPC on an existing install) hands back days
+            # of past messages; archive those quietly rather than buzzing for old news.
+            quiet = None
+            if alerts and self.db.has_any_alerts() and not any(
+                    self.db.has_source(s) for s in {a.source for a in alerts}):
+                quiet = True
+            res = self.engine.process(alerts, quiet=quiet)
             if src.name == "nws":
                 self.db.update_heartbeat(active_alerts=len(alerts))
             if res.new_alerts:

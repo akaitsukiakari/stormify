@@ -1,6 +1,6 @@
 """Source-independent alert model.
 
-Every source (NWS alerts and NHC products today; SPC, SWPC later) produces Alert objects,
+Every source (NWS alerts and text products, NHC, SPC, SWPC) produces Alert objects,
 and everything downstream (rules, storage, delivery, dashboard) only sees these.
 """
 
@@ -11,7 +11,8 @@ from typing import Any
 
 # Product "kinds" (tiers), derived from the event name.
 # "Product" is set directly on NWS text products (AFD, HWO, ...), never derived from an event name.
-KINDS = ("Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Message", "Product", "Other")
+KINDS = ("Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Message",
+         "Product", "Other")
 
 SEVERITY_RANK = {"Unknown": 0, "Minor": 1, "Moderate": 2, "Severe": 3, "Extreme": 4}
 
@@ -52,6 +53,7 @@ class Alert:
     area_desc: str = ""
     office: str = ""            # 3-letter office id, e.g. "BOU"
     sender_name: str = ""       # e.g. "NWS Boulder CO"
+    attn_offices: list[str] = field(default_factory=list)  # other offices it concerns (SPC MD "ATTN...WFO")
     message_type: str = "Alert"  # Alert | Update | Cancel
     vtec_action: str = ""       # NEW, CON, EXT, UPG, CAN, EXP, ...
     status: str = "Actual"      # Actual | Test | Exercise | ...

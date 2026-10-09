@@ -4,5 +4,7 @@ from .base import Source
 from .nhc import NHCSource
 from .nws import NWSAlertsSource
 from .nws_products import NWSProductsSource
+from .spc import SPCSource
+from .swpc import SWPCSource
 
-__all__ = ["Source", "NWSAlertsSource", "NWSProductsSource", "NHCSource"]
+__all__ = ["Source", "NWSAlertsSource", "NWSProductsSource", "NHCSource", "SPCSource", "SWPCSource"]

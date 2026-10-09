@@ -126,7 +126,7 @@ class Rule:
         if s.get("nationwide"):
             return True
         offices = {_norm_office(o) for o in s.get("offices", [])}
-        if offices and a.office.upper() in offices:
+        if offices and (a.office.upper() in offices or offices.intersection(a.attn_offices)):
             return True
         zones = {z.upper() for z in s.get("zones", [])}
         if zones and zones.intersection(a.zones):

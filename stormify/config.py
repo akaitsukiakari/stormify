@@ -26,6 +26,20 @@ class Config:
     nhc_enabled: bool = True
     nhc_basins: list = field(default_factory=lambda: ["at", "ep", "cp"])
     nhc_base_url: str = "https://www.nhc.noaa.gov"
+    # Storm Prediction Center: Day 1-3 convective outlooks and mesoscale discussions.
+    spc_enabled: bool = True
+    spc_outlook_days: list = field(default_factory=lambda: [1, 2, 3])
+    spc_mds: bool = True
+    spc_base_url: str = "https://www.spc.noaa.gov"
+    # Space Weather Prediction Center watches, warnings, alerts and summaries.
+    swpc_enabled: bool = True
+    swpc_url: str = "https://services.swpc.noaa.gov/products/alerts.json"
+    # Fill in map shapes for alerts that only list zones (most watches and advisories).
+    zone_shapes: bool = True
+    zone_fetch_per_poll: int = 40
+    # Map images attached to pushes (needs public_url and Pillow).
+    notification_images: bool = True
+    cache_dir: str = ""
     # Heartbeat is considered stale (health endpoint returns 503) after this many seconds.
     heartbeat_stale_seconds: int = 300
     # Safety valve for outbreaks: beyond this many pushes in one poll, send one summary instead.

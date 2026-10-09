@@ -282,8 +282,9 @@ def test_poll_survives_one_basin_failing_but_not_all():
 def test_poller_includes_nhc_unless_disabled(tmp_path):
     from stormify.poller import Poller
     db = Database(str(tmp_path / "p.db"))
-    assert [s.name for s in Poller(Config(), db).sources] == ["nws", "nhc"]
-    assert [s.name for s in Poller(Config(nhc_enabled=False), db).sources] == ["nws"]
+    assert [s.name for s in Poller(Config(), db).sources] == ["nws", "nhc", "spc", "swpc"]
+    off = Config(nhc_enabled=False, spc_enabled=False, swpc_enabled=False)
+    assert [s.name for s in Poller(off, db).sources] == ["nws"]
 
 
 # ---- cli -------------------------------------------------------------------
