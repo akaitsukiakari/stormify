@@ -283,3 +283,32 @@ def test_swpc_push_rule_and_first_poll_quiet(tmp_path, channels, sent):
     p.poll_once()
     assert [n.title for n in sent] == ["Alert: Geomagnetic K-index of 7"]
     assert "G3 (Strong)" in sent[0].body
+
+
+def test_side_source_failure_keeps_heartbeat_fresh(tmp_path):
+    import requests
+    db = Database(str(tmp_path / "h.db"))
+
+    class Ok:
+        name = "nws"
+
+        def poll(self):
+            return None
+
+    class Down:
+        name = "swpc"
+
+        def poll(self):
+            raise requests.ConnectionError("swpc down")
+
+    cfg = Config(db_path=db.path)
+    Poller(cfg, db, sources=[Ok(), Down()]).poll_once()
+    hb = db.heartbeat()
+    assert hb["last_success_at"] and "swpc down" in hb["last_error"]
+
+    class NwsDown(Down):
+        name = "nws"
+
+    db2 = Database(str(tmp_path / "h2.db"))
+    Poller(cfg, db2, sources=[NwsDown()]).poll_once()
+    assert db2.heartbeat()["last_success_at"] is None

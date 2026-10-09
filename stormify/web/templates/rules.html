@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stormify · Rules</title>
+<link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+<link rel="icon" href="{{ url_for('static', filename='favicon-32.png') }}" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='rules.css') }}">
+</head>
+<body class="rules-page">
+<header class="topbar">
+  <a class="brand" href="/"><span class="bolt">⚡</span>Stormify</a>
+  <span class="muted">Rules</span>
+  <div class="spacer"></div>
+  <span class="muted small" id="dirty"></span>
+  <button class="primary" id="save" disabled>Save</button>
+  <a class="ghost" href="/">Dashboard</a>
+  <span class="muted">{{ user.name }}</span>
+</header>
+
+<div class="banner" id="banner" hidden></div>
+
+<nav class="tabs" role="tablist">
+  <button class="tab on" data-tab="rules" role="tab">By rule</button>
+  <button class="tab" data-tab="office" role="tab">By office</button>
+  <button class="tab" data-tab="groups" role="tab">Office groups</button>
+</nav>
+
+<section class="pane" id="pane-rules">
+  <div class="toolbar" id="bulk">
+    <label class="check"><input type="checkbox" id="select-all"><span id="sel-count">Select</span></label>
+    <div class="bulk-actions" id="bulk-actions">
+      <button data-bulk="nationwide" title="Every selected rule covers the whole country">Nationwide</button>
+      <button data-bulk="set-offices" title="Replace the offices on every selected rule">Set offices…</button>
+      <button data-bulk="add-offices">Add offices…</button>
+      <button data-bulk="remove-offices">Remove offices…</button>
+      <select data-bulk="group" title="Use a saved office group on the selected rules"><option value="">Apply group…</option></select>
+      <select data-bulk="copy" title="Copy one rule's scope onto the selected rules"><option value="">Copy scope from…</option></select>
+      <button data-bulk="clear-scope" title="Remove every location from the selected rules">Clear scope</button>
+      <span class="sep"></span>
+      <button data-bulk="enable">Turn on</button>
+      <button data-bulk="disable">Turn off</button>
+      <button data-bulk="push">Push</button>
+      <button data-bulk="log">Dashboard only</button>
+      <select data-bulk="priority"><option value="">Loudness…</option><option value="5">5 · urgent</option><option value="4">4 · high</option><option value="3">3 · default</option><option value="2">2 · low</option><option value="1">1 · min</option></select>
+      <button data-bulk="duplicate">Duplicate</button>
+      <button data-bulk="delete" class="danger">Delete</button>
+    </div>
+  </div>
+  <div class="office-bar" id="office-bar" hidden>
+    <span id="office-bar-label"></span>
+    <div class="chipbox" id="office-bar-input"></div>
+    <button class="primary" id="office-bar-ok">Apply</button>
+    <button id="office-bar-cancel">Cancel</button>
+  </div>
+  <div class="row-actions">
+    <button id="add-rule">+ New rule</button>
+    <button id="preview" title="Run these rules over the alerts from the last 48 hours">Check against the last 48 h</button>
+    <label class="ghost file">Import JSON<input type="file" id="import" accept=".json,application/json" hidden></label>
+    <a class="ghost" href="/api/rules?download=1">Export JSON</a>
+    <span class="muted small" id="preview-note"></span>
+  </div>
+  <div id="rule-list"></div>
+</section>
+
+<section class="pane" id="pane-office" hidden>
+  <div class="toolbar">
+    <span class="muted">Office</span>
+    <div class="suggest-wrap"><input id="office-pick" placeholder="Type a code or city (Bou, Denver…)" autocomplete="off"><div class="suggest" hidden></div></div>
+    <span class="muted small" id="office-name"></span>
+  </div>
+  <div class="row-actions" id="office-actions" hidden>
+    <button id="office-add-all">Add to every rule</button>
+    <button id="office-remove-all">Remove from every rule</button>
+  </div>
+  <div id="office-list"><div class="empty">Pick an office to see and change which rules cover it.</div></div>
+</section>
+
+<section class="pane" id="pane-groups" hidden>
+  <p class="muted small help">A group is a saved list of offices, like "my home offices". Rules that use a group follow it, so editing the group here changes every rule that uses it.</p>
+  <div class="row-actions"><button id="add-group">+ New group</button></div>
+  <div id="group-list"></div>
+</section>
+
+<script src="{{ url_for('static', filename='offices.js') }}"></script>
+<script src="{{ url_for('static', filename='rules.js') }}"></script>
+</body>
+</html>

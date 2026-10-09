@@ -79,10 +79,15 @@ class Poller:
                         self.shape_queue[item["id"]] = item
         self.fill_shapes()
         self.db.bump_heartbeat(polls=1)
-        if errors:
-            self.db.update_heartbeat(last_error="; ".join(errors)[:500])
-        else:
-            self.db.update_heartbeat(last_success_at=utcnow(), last_error=None)
+        # The heartbeat (and Home Assistant's "Stormify is down") follows the NWS alerts feed. A hiccup
+        # at SPC, SWPC or NHC is shown as the last error but doesn't mark the whole poller stale.
+        names = [s.name for s in self.sources]
+        core = "nws" if "nws" in names else None
+        core_failed = any(e.startswith(f"{core}: ") for e in errors) if core else bool(errors)
+        fields = {"last_error": "; ".join(errors)[:500] if errors else None}
+        if not core_failed:
+            fields["last_success_at"] = utcnow()
+        self.db.update_heartbeat(**fields)
 
         keep = int(self.cfg.extra.get("keep_days", 0) or 0)
         if keep and time.time() - self._last_prune > 86400:

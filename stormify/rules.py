@@ -18,7 +18,8 @@ Rule JSON shape (all keys optional except name):
   "kinds": ["Warning"],                              # Emergency/Warning/Watch/Advisory/Statement/...
   "tags_any": ["pds", "emergency"],                 # derived tags; alert needs at least one
   "scope": {"nationwide": true}                      # or {"offices": ["BOU"], "zones": [...],
-                                                     #     "states": ["CO"], "same": ["008005"]}
+                                                     #     "states": ["CO"], "same": ["008005"],
+                                                     #     "groups": ["home"]}  (saved office groups)
   "filters": {
     "include_any": ["PDS", "particularly dangerous situation"],   # OR
     "include_all": [],                                            # AND
@@ -81,6 +82,9 @@ class Rule:
     body_template: str | None = None
     id: int | None = None
 
+    # Offices from the saved groups the scope names; filled in by load_rules, never saved.
+    group_offices = frozenset()
+
     @classmethod
     def from_dict(cls, d: dict) -> "Rule":
         known = set(cls.__dataclass_fields__)
@@ -100,6 +104,11 @@ class Rule:
             raise RuleError(f"{self.name}: on_update must be one of {sorted(VALID_ON_UPDATE)}")
         if not 1 <= int(self.priority) <= 5:
             raise RuleError(f"{self.name}: priority must be 1..5")
+        if not isinstance(self.scope, dict):
+            raise RuleError(f"{self.name}: scope must be an object")
+        for key in ("offices", "zones", "states", "same", "groups"):
+            if not isinstance(self.scope.get(key, []), list):
+                raise RuleError(f"{self.name}: scope {key} must be a list")
         cs = bool(self.filters.get("case_sensitive", False))
         for key in ("include_regex", "exclude_regex"):
             for pat in self.filters.get(key, []):
@@ -125,7 +134,7 @@ class Rule:
         s = self.scope or {}
         if s.get("nationwide"):
             return True
-        offices = {_norm_office(o) for o in s.get("offices", [])}
+        offices = {_norm_office(o) for o in s.get("offices", [])} | self.group_offices
         if offices and (a.office.upper() in offices or offices.intersection(a.attn_offices)):
             return True
         zones = {z.upper() for z in s.get("zones", [])}
@@ -188,8 +197,27 @@ class Decision:
         return max(self.push_rules, key=lambda r: r.priority, default=None)
 
 
-def load_rules(rule_dicts: list[dict]) -> list[Rule]:
-    return [Rule.from_dict(d) for d in rule_dicts]
+def load_rules(rule_dicts: list[dict], groups: dict[str, list[str]] | None = None) -> list[Rule]:
+    """Rules from their JSON. `groups` is the user's saved office groups ({"home": ["BOU", ...]})."""
+    rules = [Rule.from_dict(d) for d in rule_dicts]
+    for r in rules:
+        names = (r.scope or {}).get("groups") or []
+        if names and groups:
+            r.group_offices = frozenset(_norm_office(o) for n in names for o in groups.get(n, []))
+    return rules
+
+
+def clean_groups(raw) -> dict[str, list[str]]:
+    """Validate saved office groups from the dashboard: {name: [office codes]}."""
+    if not isinstance(raw, dict):
+        raise RuleError("office groups must be an object")
+    out: dict[str, list[str]] = {}
+    for name, offices in raw.items():
+        name = str(name).strip()
+        if not name or not isinstance(offices, list):
+            raise RuleError(f"office group {name!r} needs a name and a list of offices")
+        out[name] = sorted({_norm_office(str(o)) for o in offices if str(o).strip()})
+    return out
 
 
 def evaluate(alert: Alert, rules: list[Rule]) -> Decision:

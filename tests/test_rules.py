@@ -119,3 +119,17 @@ def test_priority_takes_highest():
     rules = [rule(name="a", priority=2), rule(name="b", priority=5)]
     d = evaluate(alert("tor1"), rules)
     assert d.priority == 5 and d.lead_rule.name == "b"
+
+
+def test_scope_groups_follow_the_saved_group():
+    from stormify.rules import clean_groups
+    a = alert("tor1")  # BOU
+    rules = load_rules([{"name": "home", "scope": {"groups": ["home"]}}], {"home": ["kbou", "PUB"]})
+    assert rules[0].matches_scope(a)
+    assert not load_rules([{"name": "home", "scope": {"groups": ["home"]}}], {"home": ["PUB"]})[0].matches_scope(a)
+    assert not load_rules([{"name": "home", "scope": {"groups": ["gone"]}}], {})[0].matches_scope(a)
+    assert clean_groups({" home ": ["bou", "KPUB", "bou"]}) == {"home": ["BOU", "PUB"]}
+    with pytest.raises(RuleError):
+        clean_groups({"x": "BOU"})
+    with pytest.raises(RuleError):
+        Rule.from_dict({"name": "bad", "scope": {"offices": "BOU"}})

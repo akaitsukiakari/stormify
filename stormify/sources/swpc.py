@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 CODE_RE = re.compile(r"Space Weather Message Code:\s*(\w+)", re.I)
 SERIAL_RE = re.compile(r"Serial Number:\s*(\d+)", re.I)
 ISSUE_RE = re.compile(r"Issue Time:\s*(\d{4} \w{3} \d{1,2} \d{4}) UTC", re.I)
-HEAD_RE = re.compile(r"^(CANCEL (?:WATCH|WARNING|ALERT|SUMMARY)|EXTENDED WARNING|WATCH|WARNING|ALERT|SUMMARY):\s*(.+?)\s*$",
-                     re.M)
+HEAD_RE = re.compile(
+    r"^(CANCEL (?:WATCH|WARNING|ALERT|SUMMARY)|EXTENDED WARNING|WATCH|WARNING|ALERT|SUMMARY):\s*(.+?)\s*$", re.M)
 REF_RE = re.compile(r"(?:Extension to|Cancel) Serial Number:\s*(\d+)", re.I)
 VALID_TO_RE = re.compile(r"(?:Now Valid Until|Valid To):\s*(\d{4} \w{3} \d{1,2} \d{4}) UTC", re.I)
 SCALE_RE = re.compile(r"NOAA Scale:\s*([GSR])([1-5])\b")

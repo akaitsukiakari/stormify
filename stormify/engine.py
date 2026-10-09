@@ -71,11 +71,12 @@ class Engine:
         self.tz_lookup = tz_lookup
 
     # ---- helpers -------------------------------------------------------
-    def _rules_for(self, user_id: int) -> list[Rule]:
+    def _rules_for(self, user: dict) -> list[Rule]:
         try:
-            return load_rules(self.db.list_rules(user_id, enabled_only=True))
+            return load_rules(self.db.list_rules(user["id"], enabled_only=True),
+                              (user.get("settings") or {}).get("office_groups"))
         except RuleError as e:
-            log.error("user %s has an invalid rule, skipping their rules: %s", user_id, e)
+            log.error("user %s has an invalid rule, skipping their rules: %s", user["id"], e)
             return []
 
     def _fill_tz(self, a: Alert) -> None:
@@ -103,7 +104,8 @@ class Engine:
         click = f"{base}/?alert={quote(a.id, safe='')}" if base else None
         image = None
         # The phone fetches the picture from the dashboard, so it needs a public address to reach.
-        if base and self.cfg.notification_images and images.available() and images.drawable(a) and status != "CANCELLED":
+        if (base and self.cfg.notification_images and status != "CANCELLED"
+                and images.available() and images.drawable(a)):
             image = f"{base}/img/{self.db.image_token(a.id)}.png"
         return Notification(title=title, body=body, priority=priority, click_url=click, image_url=image,
                             group=a.thread_key, is_test="test" in a.tag_set,
@@ -182,7 +184,7 @@ class Engine:
             self._fill_tz(a)
 
         users = self.db.list_users()
-        rules_by_user = {u["id"]: self._rules_for(u["id"]) for u in users}
+        rules_by_user = {u["id"]: self._rules_for(u) for u in users}
         # Per user: thread_key -> queued push. A newer alert in the same thread
         # replaces the queued one so a single storm buzzes once per poll.
         pending: dict[int, dict[str, Pending]] = {u["id"]: {} for u in users}

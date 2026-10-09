@@ -1,0 +1,29 @@
+{
+  "stormify_rules": 1,
+  "rules": [
+    {
+      "name": "SPC Day 1 outlook, Moderate or High risk",
+      "events": ["Day 1 Convective Outlook"],
+      "tags_any": ["risk-mdt", "risk-high"],
+      "scope": {"offices": ["SPC"]},
+      "action": "push",
+      "priority": 4,
+      "on_update": "significant"
+    },
+    {
+      "name": "SPC outlooks (dashboard only)",
+      "kinds": ["Outlook"],
+      "scope": {"offices": ["SPC"]},
+      "action": "log"
+    },
+    {
+      "name": "Mesoscale discussions, watch likely",
+      "events": ["Mesoscale Discussion"],
+      "tags_any": ["watch-likely"],
+      "scope": {"nationwide": true},
+      "action": "push",
+      "priority": 3,
+      "on_update": "new_only"
+    }
+  ]
+}

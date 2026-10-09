@@ -2,6 +2,7 @@ import pytest
 from fixtures import collection
 from werkzeug.security import generate_password_hash
 
+from stormify.config import Config
 from stormify.db import utcnow
 from stormify.engine import Engine
 from stormify.models import Alert
@@ -153,3 +154,30 @@ def test_offices_script_loads_before_the_dashboard(client):
     page = client.get("/").data
     assert page.index(b"offices.js") < page.index(b"app.js")
     assert b"BOU:" in client.get("/static/offices.js").data
+
+
+def test_rules_page_groups_and_preview(client, db):
+    login(client)
+    page = client.get("/rules")
+    assert page.status_code == 200 and b"rules.js" in page.data
+    assert client.put("/api/settings", json={"office_groups": {"home": "BOU"}}).status_code == 400
+    r = client.put("/api/settings", json={"office_groups": {"home": ["bou", "KFWD"]}})
+    assert r.json["settings"]["office_groups"] == {"home": ["BOU", "FWD"]}
+    rules = [{"name": "Home warnings", "kinds": ["Warning"], "scope": {"groups": ["home"]}},
+             {"name": "Logged watches", "kinds": ["Watch"], "scope": {"nationwide": True}, "action": "log"}]
+    p = client.post("/api/rules/preview", json={"rules": rules}).json
+    assert p["alerts"] == len(collection()["features"])
+    home, watches = p["rules"]
+    assert home["push"] >= 2 and dict(home["events"])["Tornado Warning"] >= 2
+    assert watches["push"] == 0 and watches["log"] == 1
+    assert client.post("/api/rules/preview", json={"rules": [{"name": "x", "bogus": 1}]}).status_code == 400
+    # The engine honors the saved group too.
+    assert client.put("/api/rules", json={"rules": rules}).json["ok"]
+    u = db.get_user(name="scott")
+    eng = Engine(db, Config(db_path=db.path), channel_factory=lambda s: [])
+    assert eng._rules_for(u)[0].group_offices == frozenset({"BOU", "FWD"})
+
+
+def test_dashboard_links_to_rules(client):
+    login(client)
+    assert b'href="/rules"' in client.get("/").data

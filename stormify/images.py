@@ -185,7 +185,8 @@ class Renderer:
 
     def render(self, a: Alert, geom: dict) -> bytes:
         map_h = HEIGHT - HEADER
-        z, cx, cy = pick_view(geom, WIDTH, map_h)
+        # A storm center with a short track would otherwise zoom to street level.
+        z, cx, cy = pick_view(geom, WIDTH, map_h, zmax=6 if a.source == "nhc" else 10)
         base, left, top = self._basemap(z, cx, cy, WIDTH, map_h)
         overlay = Image.new("RGBA", (WIDTH, map_h), (0, 0, 0, 0))
         d = ImageDraw.Draw(overlay)

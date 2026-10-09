@@ -2,6 +2,8 @@
 
 Every alert is archived to the dashboard no matter what. Rules decide which alerts **also push** to your phone.
 
+The easiest way to edit them is the **Rules** page in the dashboard (`/rules`): search offices by code or city, pick several rules and set, add or remove offices on all of them at once, copy one rule's scope onto others, save office groups, and check a draft against the last 48 hours before saving. The **By office** tab shows every rule that covers one office and lets you switch it on or off for each. The JSON below is what that page saves.
+
 A rule matches an alert when its **products** and **scope** match. Then:
 
 - if the alert passes the rule's **filters**, the rule's `action` applies (`push` or `log`)
@@ -15,10 +17,10 @@ If several push rules match, the highest `priority` wins, along with that rule's
 |---|---|
 | `name` | Label shown in the feed ("matched …") |
 | `enabled` | `true`/`false` |
-| `events` | Exact event names, case-insensitive. Empty = any. e.g. `["Tornado Warning", "Tornado Watch"]`. NHC products are listed [below](#national-hurricane-center-products). |
-| `kinds` | Tiers: `Emergency`, `Warning`, `Watch`, `Advisory`, `Statement`, `Outlook`, `Message`, `Product`, `Other`. An emergency also counts as a Warning. `Product` is an NWS text product (AFD, HWO, RER, ...); scope those by `offices`, since they carry no zones. |
-| `tags_any` | Derived tags, at least one required: `emergency`, `pds`, `considerable`, `destructive`, `observed`, `tornado-possible`, plus the NHC tags below |
-| `scope` | `{"nationwide": true}`, or any mix of `offices` (`"BOU"` or `"KBOU"`), `zones` (UGC like `COZ039`, `COC005`), `states` (`"CO"`), `same` (FIPS like `"008005"`) |
+| `events` | Exact event names, case-insensitive. Empty = any. e.g. `["Tornado Warning", "Tornado Watch"]`. NHC, SPC and SWPC products are listed below. |
+| `kinds` | Tiers: `Emergency`, `Warning`, `Watch`, `Advisory`, `Statement`, `Outlook`, `Discussion`, `Message`, `Product`, `Other`. An emergency also counts as a Warning. `Product` is an NWS text product (AFD, HWO, RER, ...); scope those by `offices`, since they carry no zones. |
+| `tags_any` | Derived tags, at least one required: `emergency`, `pds`, `considerable`, `destructive`, `observed`, `tornado-possible`, plus the NHC, SPC and SWPC tags below |
+| `scope` | `{"nationwide": true}`, or any mix of `offices` (`"BOU"` or `"KBOU"`), `groups` (names of saved office groups), `zones` (UGC like `COZ039`, `COC005`), `states` (`"CO"`), `same` (FIPS like `"008005"`) |
 | `filters.include_any` | At least one of these phrases must appear (OR) |
 | `filters.include_all` | All of these phrases must appear (AND) |
 | `filters.exclude_any` | None of these may appear |
@@ -28,7 +30,7 @@ If several push rules match, the highest `priority` wins, along with that rule's
 | `min_hail_in` / `min_wind_mph` | Thresholds from the warning's tagged hail size / wind gust |
 | `action` | `push` or `log` |
 | `priority` | 1–5 (ntfy priority). Emergencies are always sent at 5. |
-| `on_update` | `new_only`, `significant` (severity up, new PDS/emergency/observed tag, bigger hail/wind, upgrade; for NHC, stronger winds, a new watch/warning type, or becoming a major hurricane), or `any` |
+| `on_update` | `new_only`, `significant` (severity up, new PDS/emergency/observed tag, bigger hail/wind, upgrade; for NHC, stronger winds, a new watch/warning type, or becoming a major hurricane; for SPC outlooks, a higher risk category; for SWPC, a higher G/S/R level), or `any` |
 | `on_cancel` | Push a "CANCELLED" note when something you were pushed is cancelled |
 | `title_template` / `body_template` | Custom notification text (see below) |
 
@@ -89,6 +91,48 @@ stormify rules add --user scott --example tropical
 
 `rules add` also takes a file of your own rules. Rules whose name you already have are skipped. Turn NHC polling off with `nhc_enabled = false`, or limit basins with `nhc_basins = ["at"]`, under `[general]` in config.toml.
 
+## Office groups
+
+A group is a saved list of offices, like "Home offices: BOU, PUB, GJT". A rule with `"scope": {"groups": ["Home offices"]}` covers whatever the group holds when the alert arrives, so changing the group changes every rule that uses it. Groups live in your user settings; make and edit them on the Rules page's **Office groups** tab.
+
+## Storm Prediction Center products
+
+SPC products have office `SPC`. Watches themselves (`Tornado Watch`, `Severe Thunderstorm Watch`) come through the NWS feed as usual.
+
+| Event | Kind | What it is |
+|---|---|---|
+| `Day 1 Convective Outlook`, `Day 2 …`, `Day 3 …` | Outlook | Each issuance, with its risk areas drawn in SPC's colors and the narrative text. The headline names the highest risk, e.g. `Day 1: Enhanced risk`. Updates for the same convective day thread together. |
+| `Mesoscale Discussion` | Discussion | With its polygon, the areas affected, what it concerns and the watch probability. The headline reads `Mesoscale Discussion 1234 · Severe potential...Tornado Watch likely`. |
+
+Tags:
+
+- outlooks: the highest category, one of `risk-tstm`, `risk-mrgl`, `risk-slgt`, `risk-enh`, `risk-mdt`, `risk-high`
+- mesoscale discussions: `watch-likely`, `watch-possible`, `watch-unlikely`, `tornado-watch`, `svr-watch`, `winter`, `heavy-rain`
+
+A mesoscale discussion also matches an `offices` scope for any office in its `ATTN...WFO` line, and a `states` scope for the states in its header. So "MDs that concern Boulder" is `{"events": ["Mesoscale Discussion"], "scope": {"offices": ["BOU"]}}`. Its hail and wind (`min_hail_in`, `min_wind_mph`) are the "most probable peak" values when the MD gives them.
+
+Extra template variables: `risk`, `md_number`, `concerning`, `watch_prob`. Defaults: title `{headline}`, body `{area}` / `{nws_headline}` / `Until {expires}`.
+
+```bash
+stormify rules add --user scott --example spc    # Day 1 MDT/HIGH pushes, outlooks logged, "watch likely" MDs
+```
+
+Turn it off with `spc_enabled = false`, or narrow it with `spc_outlook_days = [1]` and `spc_mds = false`.
+
+## Space weather (SWPC)
+
+Space Weather Prediction Center messages have office `SWPC`. The event says what and how sure: `Geomagnetic Storm Watch` (predicted), `Geomagnetic Storm Warning` (expected soon), `Geomagnetic Storm Alert` (reached; tagged `observed`), `… Summary`, and the same for `Solar Radiation Storm` and `Radio Blackout`. K-index warnings below storm level are `Geomagnetic Warning`. Extended warnings thread with the original, and cancellations cancel it.
+
+Tags: `geomagnetic`, `radiation` or `radio`; the NOAA scale level, `g1`–`g5`, `s1`–`s5`, `r1`–`r5`; `observed` for alerts; `severe-space` for level 4 or 5.
+
+Extra template variables: `scale` (`G3`) and `scale_desc` (`G3 (Strong)`).
+
+```bash
+stormify rules add --user scott --example space  # push G3 and up, log the rest
+```
+
+Turn it off with `swpc_enabled = false`.
+
 ## Templates
 
 Templates use `{variable}` placeholders. Unknown variables come out blank. Put the important stuff first, because Android cuts off long notifications.
@@ -116,7 +160,7 @@ Extra NHC variables: `storm product adv basin pressure movement location watches
 
 ## Sharing
 
-`stormify rules export --user scott rules.json` and `stormify rules import --user friend rules.json`, or use **Export rules** in the dashboard. Importing replaces that user's rules.
+`stormify rules export --user scott rules.json` and `stormify rules import --user friend rules.json`, or **Export JSON** / **Import JSON** on the Rules page. Importing on the command line replaces that user's rules; on the Rules page you choose to replace or add, and nothing changes until you save. Office groups aren't in the export, so a rule that uses one needs the same group on the other account.
 
 ## Testing without waiting for storms
 
