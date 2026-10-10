@@ -160,4 +160,14 @@ body.dash { display: flex; flex-direction: column; }
 .legend-body { padding: 0 10px 8px; display: flex; flex-direction: column; gap: 5px; }
 .legend-row { display: flex; align-items: center; gap: 8px; line-height: 1.25; }
 .legend-row svg { flex: none; }
+.legend-row[data-key] { cursor: pointer; user-select: none; border-radius: 4px; }
+.legend-row[data-key]:hover { background: rgba(255, 255, 255, 0.06); }
+.legend-row.off { opacity: 0.4; }
+.legend-row.off > span { text-decoration: line-through; }
+.legend-all { display: flex; gap: 6px; }
+.legend-all button {
+  flex: 1; background: transparent; color: var(--text); border: 1px solid var(--line);
+  border-radius: 4px; padding: 3px 6px; font: inherit; font-size: 11px; cursor: pointer;
+}
+.legend-all button:disabled { opacity: 0.4; cursor: default; }
 .legend-note { color: var(--muted); font-size: 11px; margin-top: 2px; }

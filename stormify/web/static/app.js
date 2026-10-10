@@ -70,6 +70,10 @@
   let selected = new URLSearchParams(location.search).get("alert");
   const activeKinds = new Set();
   const layers = new Map();
+  // Alert types switched off from the legend, by legend key; remembered between visits.
+  const hiddenKeys = new Set();
+  try { JSON.parse(localStorage.getItem("hiddenPolys") || "[]").forEach((k) => hiddenKeys.add(k)); } catch { /* ignore */ }
+  const saveHidden = () => { try { localStorage.setItem("hiddenPolys", JSON.stringify([...hiddenKeys])); } catch { /* ignore */ } };
 
   // ---- map ----------------------------------------------------------------
   const map = L.map("map", { zoomControl: true, preferCanvas: true }).setView([39, -97], 4);
@@ -94,9 +98,17 @@
       L.DomEvent.disableClickPropagation(el);
       L.DomEvent.disableScrollPropagation(el);
       el.addEventListener("click", (e) => {
+        const all = e.target.closest("[data-all]");
+        if (all) { setAllHidden(all.dataset.all === "hide"); return; }
+        const row = e.target.closest(".legend-row[data-key]");
+        if (row) { toggleKey(row.dataset.key); return; }
         if (!e.target.closest(".legend-head")) return;
         el.classList.toggle("collapsed");
         try { localStorage.setItem("legendCollapsed", el.classList.contains("collapsed") ? "1" : ""); } catch { /* ignore */ }
+      });
+      el.addEventListener("keydown", (e) => {
+        const row = (e.key === "Enter" || e.key === " ") && e.target.closest(".legend-row[data-key]");
+        if (row) { e.preventDefault(); toggleKey(row.dataset.key); }
       });
       try { if (localStorage.getItem("legendCollapsed")) el.classList.add("collapsed"); } catch { /* ignore */ }
       return el;
@@ -254,17 +266,20 @@
     const watch = a.kind === "Watch";
     // Shapes built from zone outlines (no polygon of their own) get a dashed edge.
     const zoned = (a.params || {}).geometry_source === "zones";
+    const subs = [], opts = {};
     let data = a.geometry, style = { color: c, weight: watch ? 1.5 : 2.5, fillColor: c, fillOpacity: watch ? 0.08 : 0.22, dashArray: zoned ? "5 4" : null };
     if (isOutlook(a)) {
       // One feature per risk area so each gets SPC's color.
       const labels = (a.params || {}).risk_labels || [];
       data = { type: "FeatureCollection", features: (a.geometry.geometries || []).map((g, i) => ({ type: "Feature", geometry: g, properties: { risk: labels[i] } })) };
+      opts.onEachFeature = (f, l) => subs.push(l);
       style = (f) => {
         const rc = RISK_COLORS[f.properties.risk] || c;
         return { color: rc, weight: 1.5, fillColor: rc, fillOpacity: 0.18 };
       };
     }
     const layer = L.geoJSON(data, {
+      ...opts,
       style,
       // Storm centers (NHC advisories) are points; their forecast track is a line.
       pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
@@ -274,8 +289,57 @@
     layer.addTo(polyGroup);
     if (isOutlook(a)) layer.bringToBack();
     layer.bounds = layer.getBounds();  // the legend checks these on every pan; work them out once
+    layer.alert = a;
+    layer.subs = subs;  // outlook risk areas, so each level can be hidden on its own
     layers.set(a.id, layer);
     return layer;
+  }
+
+  // Legend key for an alert: storms by name, everything else by event (emergencies on their own).
+  // Outlooks are keyed per risk level instead ("risk:SLGT").
+  function alertKey(a) {
+    const storm = a.source === "nhc" ? ((a.params || {}).storm || a.event) : "";
+    if (storm) return "nhc:" + storm;
+    return a.event + ((a.tags || []).includes("emergency") ? ":emergency" : "");
+  }
+
+  // Put back on the map only what isn't switched off, in draw order. The selected alert always
+  // shows, so the Map button and a shared link still find it.
+  function applyVisibility() {
+    polyGroup.clearLayers();
+    [...layers.values()].sort((x, y) => drawOrder(x.alert) - drawOrder(y.alert)).forEach((layer) => {
+      const a = layer.alert, force = a.id === selected;
+      if (layer.subs.length) {
+        layer.clearLayers();
+        layer.subs.forEach((l) => { if (force || !hiddenKeys.has("risk:" + l.feature.properties.risk)) layer.addLayer(l); });
+        if (layer.getLayers().length) polyGroup.addLayer(layer);
+      } else if (force || !hiddenKeys.has(alertKey(a))) {
+        polyGroup.addLayer(layer);
+      }
+    });
+  }
+
+  function toggleKey(key) {
+    hiddenKeys.has(key) ? hiddenKeys.delete(key) : hiddenKeys.add(key);
+    saveHidden();
+    applyVisibility();
+    highlight(selected);
+    renderLegend();
+  }
+
+  // Hide all switches off every type loaded right now; types that show up later still draw.
+  function setAllHidden(hide) {
+    hiddenKeys.clear();
+    if (hide) {
+      for (const layer of layers.values()) {
+        if (layer.subs.length) layer.subs.forEach((l) => hiddenKeys.add("risk:" + l.feature.properties.risk));
+        else hiddenKeys.add(alertKey(layer.alert));
+      }
+    }
+    saveHidden();
+    applyVisibility();
+    highlight(selected);
+    renderLegend();
   }
 
   const PIN = `<svg viewBox="0 0 12 16" width="10" height="13" aria-hidden="true"><path d="M6 0a6 6 0 0 0-6 6c0 4.5 6 10 6 10s6-5.5 6-10a6 6 0 0 0-6-6zm0 8.5A2.5 2.5 0 1 1 6 3.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg>`;
@@ -371,8 +435,9 @@
   // Thicker outline on the selected polygon, drawn above its neighbors.
   let lit = null;
   function highlight(id) {
-    if (lit) lit.eachLayer((l) => l.setStyle(l.base));
+    if (lit) lit.subs.length ? lit.subs.forEach((l) => l.base && l.setStyle(l.base)) : lit.eachLayer((l) => l.setStyle(l.base));
     lit = null;
+    if (hiddenKeys.size) applyVisibility();
     const layer = id && layers.get(id);
     if (!layer) return;
     layer.eachLayer((l) => {
@@ -406,17 +471,17 @@
         // One row per risk level drawn, SPC's colors.
         for (const r of (a.params || {}).risk_labels || []) {
           const key = "risk:" + r;
-          if (!rows.has(key)) rows.set(key, { kind: "Outlook", color: RISK_COLORS[r] || colorFor(a), n: 1, rank: 10 + Object.keys(RISK_COLORS).indexOf(r) * -0.01, label: `Day ${(a.params || {}).day || ""} outlook: ${RISK_NAMES[r] || r}`, zoned: false });
+          if (!rows.has(key)) rows.set(key, { key, kind: "Outlook", color: RISK_COLORS[r] || colorFor(a), n: 1, rank: 10 + Object.keys(RISK_COLORS).indexOf(r) * -0.01, label: `Day ${(a.params || {}).day || ""} outlook: ${RISK_NAMES[r] || r}`, zoned: false });
         }
         continue;
       }
       const storm = a.source === "nhc" ? ((a.params || {}).storm || a.event) : "";
       const emergency = (a.tags || []).includes("emergency");
-      const key = storm ? "nhc:" + storm : a.event + (emergency ? ":emergency" : "");
+      const key = alertKey(a);
       const row = rows.get(key);
       if (row) { row.n += 1; if ((a.params || {}).geometry_source === "zones") row.zoned = true; continue; }
       rows.set(key, {
-        storm, kind: a.kind, color: colorFor(a), n: 1, zoned: (a.params || {}).geometry_source === "zones",
+        key, storm, kind: a.kind, color: colorFor(a), n: 1, zoned: (a.params || {}).geometry_source === "zones",
         label: storm || (emergency && !/emergency/i.test(a.event) ? `${a.event} (emergency)` : a.event),
         rank: emergency ? -1 : (rank[a.kind] ?? 2),
       });
@@ -427,9 +492,15 @@
     const hasStorm = items.some((e) => e.storm);
     const hasZoned = items.some((e) => e.zoned);
     const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: meta.timezone, timeZoneName: "short" });
+    const anyOff = items.some((e) => hiddenKeys.has(e.key));
+    const anyOn = items.some((e) => !hiddenKeys.has(e.key));
     el.innerHTML = `<div class="legend-head"><span>Legend</span><span class="legend-toggle" aria-hidden="true"></span></div>
       <div class="legend-body">
-        ${items.map((e) => `<div class="legend-row">${swatch(e)}<span>${esc(e.label)}${e.n > 1 ? ` <span class="muted">×${e.n}</span>` : ""}</span></div>`).join("")}
+        <div class="legend-all">
+          <button type="button" data-all="show"${anyOff ? "" : " disabled"}>Show all</button>
+          <button type="button" data-all="hide"${anyOn ? "" : " disabled"}>Hide all</button>
+        </div>
+        ${items.map((e) => { const off = hiddenKeys.has(e.key); return `<div class="legend-row${off ? " off" : ""}" data-key="${esc(e.key)}" role="button" tabindex="0" aria-pressed="${!off}" title="${off ? "Show" : "Hide"} on the map">${swatch(e)}<span>${esc(e.label)}${e.n > 1 ? ` <span class="muted">×${e.n}</span>` : ""}</span></div>`; }).join("")}
         ${hasStorm ? `<div class="legend-note">Dot: storm center · line: forecast track</div>` : ""}
         ${hasZoned ? `<div class="legend-note">Dashed: drawn from the alert's zones</div>` : ""}
         <div class="legend-note">Stormify · ${esc(now)}</div>
