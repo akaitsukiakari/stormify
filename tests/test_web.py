@@ -181,3 +181,48 @@ def test_rules_page_groups_and_preview(client, db):
 def test_dashboard_links_to_rules(client):
     login(client)
     assert b'href="/rules"' in client.get("/").data
+
+
+def test_zone_built_shapes_come_from_api_zones_not_the_feed(client, db):
+    login(client)
+    watch = next(a for a in client.get("/api/alerts?hours=0&lite=1").json["alerts"] if a["event"] == "Tornado Watch")
+    square = [[[[-97, 37], [-96, 37], [-96, 38], [-97, 37]]]]
+    db.set_zone_shape("KSC173", square)
+    db.set_zone_shape("KSC015", None)
+    db.set_alert_geometry(watch["id"], {"type": "MultiPolygon", "coordinates": square}, "zones")
+    lite = client.get("/api/alerts?hours=0&lite=1").json["alerts"]
+    w = next(a for a in lite if a["id"] == watch["id"])
+    assert "geometry" not in w and w["zones"] == ["KSC173", "KSC015"]
+    assert w["params"] == {"geometry_source": "zones"}
+    assert all("zones" not in a for a in lite if a["id"] != watch["id"])
+    # The selected-alert path trims the same way.
+    extra = client.get(f"/api/alerts?hours=0&lite=1&kind=Outlook&id={watch['id']}").json["alerts"][0]
+    assert "geometry" not in extra and extra["zones"] == ["KSC173", "KSC015"]
+    # The full alert still carries its shape (the sheet and notification pictures use it).
+    assert client.get("/api/alert", query_string={"id": watch["id"]}).json["alert"]["geometry"]["coordinates"] == square
+
+    r = client.get("/api/zones/KSC")
+    assert r.json == {"KSC015": None, "KSC173": square}
+    assert "max-age" in r.headers["Cache-Control"]
+    assert client.get("/api/zones/KSC", headers={"If-None-Match": r.headers["ETag"]}).status_code == 304
+    assert client.get("/api/zones/KSZ").json == {}
+    assert client.get("/api/zones/ks").status_code == 400
+
+
+def test_older_database_reads_the_slow_way_until_backfilled(cfg):
+    from stormify.db import Database
+    db = Database(cfg.db_path)
+    uid = db.create_user("scott", None, {})
+    Engine(db, cfg, channel_factory=lambda s: []).process(parse_collection(collection()))
+    before = db.query_feed_json(uid, limit=2000)
+    # As if these were archived before alert_lite existed.
+    db.conn.execute("DELETE FROM alert_lite")
+    db.conn.execute("PRAGMA user_version=0")
+    assert not Database(cfg.db_path).lite_ready()
+    assert db.query_feed_json(uid, limit=2000) == before
+    while db.backfill_lite(batch=3):
+        assert db.query_feed_json(uid, limit=2000) == before
+    assert db.lite_ready() and db.query_feed_json(uid, limit=2000) == before
+    db.conn.execute("UPDATE alerts SET first_seen='2000-01-01T00:00:00Z'")
+    db.prune(30)
+    assert db.conn.execute("SELECT COUNT(*) FROM alert_lite").fetchone()[0] == 0

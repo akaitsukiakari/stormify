@@ -78,6 +78,10 @@ class Poller:
                     if item:
                         self.shape_queue[item["id"]] = item
         self.fill_shapes()
+        try:
+            self.db.backfill_lite()  # alerts archived before the dashboard kept trimmed copies; a batch a poll
+        except Exception:
+            log.exception("lite backfill failed")
         self.db.bump_heartbeat(polls=1)
         # The heartbeat (and Home Assistant's "Stormify is down") follows the NWS alerts feed. A hiccup
         # at SPC, SWPC or NHC is shown as the last error but doesn't mark the whole poller stale.

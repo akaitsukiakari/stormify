@@ -191,13 +191,44 @@
       if (reset === true) shown = LIST_PAGE;
       if (reset === true || q !== lastQuery || text !== lastText) {
         const j = JSON.parse(text);
+        const shapesOk = await attachZoneShapes(j.alerts || []);
         alerts = j.alerts || [];
         total = j.total ?? alerts.length;
-        lastQuery = q; lastText = text;
+        lastQuery = q; lastText = shapesOk ? text : "";
         render();
       }
       $("updated").textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
     } catch (e) { if (e.message !== "login") $("count").textContent = "Could not load alerts"; }
+  }
+
+  // Alerts that only list zones arrive with their zone codes instead of an outline; the outlines
+  // come once per state from /api/zones (the browser caches them) and are stitched together here.
+  const zoneShapes = new Map();  // UGC code -> list of polygons, or null for none
+  const UGC = /^[A-Z]{2}[CZ]\d{3}$/;
+  async function fetchZones(prefix, fresh) {
+    const r = await getJSON("/api/zones/" + prefix, fresh ? { cache: "no-cache" } : undefined);
+    if (!r.ok) throw new Error("zones " + r.status);
+    for (const [z, shape] of Object.entries(await r.json())) zoneShapes.set(z, shape);
+  }
+  async function attachZoneShapes(list) {
+    const zoned = list.filter((a) => !a.geometry && (a.params || {}).geometry_source === "zones" && a.zones);
+    const missing = () => [...new Set(zoned.flatMap((a) => a.zones).filter((z) => UGC.test(z) && !zoneShapes.has(z)))];
+    const prefixes = (zones) => [...new Set(zones.map((z) => z.slice(0, 3)))];
+    let ok = true;
+    try {
+      await Promise.all(prefixes(missing()).map((p) => fetchZones(p, false)));
+      // Still missing: the cached copy is from before that zone was looked up, so ask the Pi again.
+      await Promise.all(prefixes(missing()).map((p) => fetchZones(p, true)));
+      missing().forEach((z) => zoneShapes.set(z, null));  // don't keep asking for it every minute
+    } catch (e) {
+      if (e.message === "login") throw e;
+      ok = false;  // a hiccup: draw what we have and try again on the next refresh
+    }
+    for (const a of zoned) {
+      const polys = a.zones.flatMap((z) => zoneShapes.get(z) || []);
+      if (polys.length) a.geometry = { type: "MultiPolygon", coordinates: polys };
+    }
+    return ok;
   }
 
   async function loadMeta() {
