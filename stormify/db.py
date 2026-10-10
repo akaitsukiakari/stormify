@@ -65,6 +65,13 @@ CREATE INDEX IF NOT EXISTS alerts_kind ON alerts(kind);
 CREATE INDEX IF NOT EXISTS alerts_first_seen ON alerts(first_seen);
 CREATE INDEX IF NOT EXISTS alerts_source ON alerts(source);
 
+-- The dashboard's trimmed copy of each alert, worked out once when the alert is stored. Building it
+-- from data_json on every refresh meant parsing megabytes of JSON a minute on a Pi Zero.
+CREATE TABLE IF NOT EXISTS alert_lite (
+    id TEXT PRIMARY KEY REFERENCES alerts(id) ON DELETE CASCADE,
+    json TEXT NOT NULL
+);
+
 -- What each user's rules decided about each alert (drives the per-user feed).
 CREATE TABLE IF NOT EXISTS decisions (
     alert_id TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
@@ -138,6 +145,10 @@ class Database:
         for col in ("shape_json", "shape_at"):
             if col not in have:
                 self.conn.execute(f"ALTER TABLE zones ADD COLUMN {col} TEXT")
+        # user_version 1 = every alert has its alert_lite row. A new database starts there; an older
+        # one gets there through backfill_lite() and reads the slow way until then.
+        if self.conn.execute("PRAGMA user_version").fetchone()[0] < 1 and not self.has_any_alerts():
+            self.conn.execute("PRAGMA user_version=1")
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -245,6 +256,8 @@ class Database:
             (a.id, a.source, a.event, a.kind, a.office, a.thread_key, a.message_type, a.severity,
              a.sent, a.expires, a.headline, a.area_desc, json.dumps(a.tags), json.dumps(a.to_dict()), now, now),
         )
+        (c or self.conn).execute(f"INSERT OR IGNORE INTO alert_lite (id, json) SELECT id, {self._lite_sql()}"
+                                 " FROM alerts WHERE id=?", (a.id,))
 
     def touch_alerts(self, ids: list[str]) -> None:
         now = utcnow()
@@ -280,7 +293,10 @@ class Database:
     def lite_dict(self, d: dict) -> dict:
         """Python version of the lite trim, for a row that didn't come through query_feed_json."""
         params = d.get("params") or {}
-        d = {k: v for k, v in d.items() if k not in self.LITE_DROP}
+        zoned = params.get("geometry_source") == "zones"
+        d = {k: v for k, v in d.items() if k not in self.LITE_DROP or (zoned and k == "zones")}
+        if zoned:
+            d.pop("geometry", None)
         if d.get("source") not in ("nhc", "spc", "swpc"):
             d.pop("headline", None)
         d["params"] = {k: params[k] for k in self.LITE_PARAMS if params.get(k) is not None}
@@ -331,26 +347,50 @@ class Database:
             out.append(d)
         return out
 
+    def _lite_sql(self) -> str:
+        """SQL that trims an alerts row's data_json to the dashboard's lite JSON."""
+        # NHC, SPC and SWPC products are labeled by their headline; NWS headlines just repeat the card.
+        # A shape built from zone outlines is left out and its zone list kept: the dashboard draws it
+        # from /api/zones, so the same county borders aren't resent with every update of every advisory.
+        drop = ", ".join([*(f"'$.{k}'" for k in self.LITE_DROP if k != "zones"),
+                          "CASE WHEN source IN ('nhc', 'spc', 'swpc') THEN '$.__keep' ELSE '$.headline' END",
+                          "CASE WHEN json_extract(data_json, '$.params.geometry_source') = 'zones'"
+                          " THEN '$.geometry' ELSE '$.zones' END"])
+        keep = ", ".join(f"'{k}', json_extract(data_json, '$.params.{k}')" for k in self.LITE_PARAMS)
+        # json_patch drops the null ones, so a plain NWS alert carries "params": {}.
+        return f"json_set(json_remove(data_json, {drop}), '$.params', json_patch('{{}}', json_object({keep})))"
+
+    def lite_ready(self) -> bool:
+        return self.conn.execute("PRAGMA user_version").fetchone()[0] >= 1
+
+    def backfill_lite(self, batch: int = 300) -> int:
+        """Give a batch of older alerts (newest first) their alert_lite row; 0 once all have one."""
+        if self.lite_ready():
+            return 0
+        with self.tx() as c:
+            n = c.execute(f"INSERT OR IGNORE INTO alert_lite (id, json) SELECT id, {self._lite_sql()} FROM alerts"
+                          " WHERE id NOT IN (SELECT id FROM alert_lite) ORDER BY first_seen DESC LIMIT ?",
+                          (batch,)).rowcount
+            if n == 0:
+                c.execute("PRAGMA user_version=1")
+        return n
+
     def query_feed_json(self, user_id: int, since: str | None = None, until: str | None = None,
                         events: list[str] | None = None, offices: list[str] | None = None,
                         kinds: list[str] | None = None, action: str | None = None, q: str | None = None,
                         active_only: bool = False, limit: int = 300) -> list[tuple[str, str]]:
         """Lite feed rows as (id, JSON text), built entirely inside SQLite.
 
-        Same rows as query_feed minus the long text (fetched per alert when opened), but Python
-        never parses or re-serializes them, which was most of the work on a Pi Zero once a busy
-        day put a couple thousand alerts in the feed.
+        Same rows as query_feed minus the long text (fetched per alert when opened) and minus shapes
+        built from zones (fetched per state from /api/zones). Python never parses or re-serializes
+        them, and the trimming itself was done when each alert was stored.
         """
         where, args = self._feed_where(since, until, events, offices, kinds, action, q, active_only)
-        # NHC, SPC and SWPC products are labeled by their headline; NWS headlines just repeat the card.
-        drop = ", ".join([*(f"'$.{k}'" for k in self.LITE_DROP),
-                          "CASE WHEN a.source IN ('nhc', 'spc', 'swpc') THEN '$.__keep' ELSE '$.headline' END"])
-        keep = ", ".join(f"'{k}', json_extract(a.data_json, '$.params.{k}')" for k in self.LITE_PARAMS)
-        # json_patch drops the null ones, so a plain NWS alert carries "params": {}.
-        data = (f"json_set(json_remove(a.data_json, {drop}), '$.params', json_patch('{{}}', json_object({keep})),"
-                " '$.first_seen', a.first_seen, '$.action', coalesce(d.action, 'log'),"
+        lite = "l.json" if self.lite_ready() else self._lite_sql()
+        data = (f"json_set({lite}, '$.first_seen', a.first_seen, '$.action', coalesce(d.action, 'log'),"
                 " '$.reason', coalesce(d.reason, ''), '$.matched_rules', json(coalesce(d.rules_json, '[]')))")
-        sql = [f"SELECT a.id, {data} FROM alerts a"
+        join = " JOIN alert_lite l ON l.id=a.id" if self.lite_ready() else ""
+        sql = [f"SELECT a.id, {data} FROM alerts a{join}"
                " LEFT JOIN decisions d ON d.alert_id=a.id AND d.user_id=?", *where,
                "ORDER BY a.first_seen DESC, a.sent DESC LIMIT ?"]
         return [(r[0], r[1]) for r in self.conn.execute(" ".join(sql), [user_id, *args, limit])]
@@ -430,10 +470,20 @@ class Database:
                 out[r[0]] = json.loads(r[1]) if r[1] else None
         return out
 
+    def zone_shapes_json(self, prefix: str) -> str:
+        """Every looked-up outline for one state's zones or counties ("COZ", "KSC") as one JSON object
+        (null = no outline), stitched from the stored text without parsing it."""
+        hi = prefix[:-1] + chr(ord(prefix[-1]) + 1)
+        rows = self.conn.execute("SELECT id, shape_json FROM zones WHERE shape_at IS NOT NULL AND id >= ? AND id < ?"
+                                 " ORDER BY id", (prefix, hi))
+        return "{" + ",".join(f'"{r[0]}":{r[1] or "null"}' for r in rows) + "}"
+
     def set_alert_geometry(self, alert_id: str, geometry: dict, source: str) -> None:
         with self.tx() as c:
             c.execute("UPDATE alerts SET data_json=json_set(data_json, '$.geometry', json(?),"
                       " '$.params.geometry_source', ?) WHERE id=?", (json.dumps(geometry), source, alert_id))
+            c.execute(f"REPLACE INTO alert_lite (id, json) SELECT id, {self._lite_sql()} FROM alerts WHERE id=?",
+                      (alert_id,))
 
     # ---- notification image links --------------------------------------
     def image_token(self, alert_id: str) -> str:

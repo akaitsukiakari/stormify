@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
@@ -168,6 +169,19 @@ def create_app(cfg: Config, db: Database) -> Flask:
         # The dashboard refreshes every minute and usually nothing has changed: answer those with a
         # bodyless 304 so the Pi isn't pushing megabytes over Wi-Fi and the tunnel for nothing.
         resp.headers["Cache-Control"] = "private, no-cache"
+        resp.add_etag()
+        return resp.make_conditional(request)
+
+    @app.route("/api/zones/<prefix>")
+    @login_required
+    def api_zones(user, prefix):
+        """Zone outlines for one state ("COZ" forecast zones, "KSC" counties). The lite feed lists an
+        alert's zones instead of repeating their outlines, and the dashboard draws them from these."""
+        if not re.fullmatch(r"[A-Z]{2}[CZ]", prefix):
+            return jsonify(error="bad prefix"), 400
+        resp = Response(db.zone_shapes_json(prefix), mimetype="application/json")
+        # Zones almost never change; a zone looked up after this was cached makes the dashboard ask again.
+        resp.headers["Cache-Control"] = "private, max-age=3600"
         resp.add_etag()
         return resp.make_conditional(request)
 
