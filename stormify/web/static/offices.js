@@ -41,4 +41,5 @@ window.STORMIFY_OFFICES = {
   WNS: "Storm Prediction Center", SPC: "Storm Prediction Center", NHC: "National Hurricane Center",
   CPHC: "Central Pacific Hurricane Center", WNH: "Weather Prediction Center",
   AAQ: "National Tsunami Warning Center", HEB: "Pacific Tsunami Warning Center",
+  SWPC: "Space Weather Prediction Center",
 };

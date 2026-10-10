@@ -40,6 +40,7 @@ class NtfyChannel(Channel):
             body["click"] = n.click_url
         if n.image_url:
             body["attach"] = n.image_url
+            body["filename"] = "map.png"
         return body
 
     def send(self, n: Notification) -> None:

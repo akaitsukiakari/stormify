@@ -28,6 +28,26 @@ keep_days = 0
 nhc_enabled = true
 nhc_basins = ["at", "ep", "cp"]
 
+# Storm Prediction Center: Day 1-3 convective outlooks (checked every 5 minutes) and
+# mesoscale discussions (every poll). They land under the Outlook and Discussion chips.
+# Push them with a rule, e.g. "tags_any": ["risk-mdt", "risk-high"] or "watch-likely".
+spc_enabled = true
+spc_outlook_days = [1, 2, 3]
+spc_mds = true
+
+# Space Weather Prediction Center watches, warnings and alerts (G, S and R scales).
+# Push with a rule like "tags_any": ["g3", "g4", "g5"], "scope": {"offices": ["SWPC"]}.
+swpc_enabled = true
+
+# Draw alerts that only list zones (most watches and advisories) by looking up each zone's
+# outline once. This many lookups per poll, so a big watch fills in over a minute or two.
+zone_shapes = true
+zone_fetch_per_poll = 40
+
+# Attach a small map of the alert to pushes. Needs public_url (the phone fetches the picture
+# from the dashboard) and Pillow (install.sh installs it).
+notification_images = true
+
 [web]
 host = "127.0.0.1"   # the Cloudflare tunnel connects locally; use 0.0.0.0 to reach it on your LAN
 port = 8080

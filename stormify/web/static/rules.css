@@ -1,0 +1,124 @@
+/* Rule editor. Builds on app.css (colors, buttons, chips, badges). */
+body.rules-page { min-height: 100%; }
+.rules-page .brand { color: var(--text); }
+button.primary, .primary { background: var(--accent); color: #04111f; border-color: var(--accent); font-weight: 700; }
+button.primary:disabled { opacity: 0.4; cursor: default; }
+button.danger { color: var(--bad); }
+button.danger:hover { border-color: var(--bad); }
+button:disabled { opacity: 0.45; cursor: default; }
+button:disabled:hover { border-color: var(--line); }
+
+.banner { margin: 10px 16px 0; padding: 8px 12px; border-radius: 8px; }
+.banner.error { background: rgba(255, 71, 87, 0.15); border: 1px solid var(--bad); }
+
+.tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--line); background: var(--panel); }
+.tab { border-radius: 8px 8px 0 0; border-bottom: none; background: transparent; color: var(--muted); }
+.tab.on { background: var(--bg); color: var(--text); border-color: var(--line); }
+
+.pane { padding: 12px 16px 40px; max-width: 1100px; }
+.help { max-width: 640px; }
+.toolbar, .row-actions, .office-bar {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px;
+}
+.toolbar { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 8px 0; border-bottom: 1px solid var(--line); }
+.bulk-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bulk-actions.disabled { opacity: 0.6; }
+.bulk-actions .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.office-bar { background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 8px 10px; }
+.office-bar .chipbox { flex: 1 1 260px; }
+.file { cursor: pointer; }
+
+.rule { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; background: var(--panel); }
+.rule.sel { border-color: var(--accent); }
+.rule.off { opacity: 0.55; }
+.rule.drop { box-shadow: 0 -3px 0 var(--accent); }
+.rule.dragging { opacity: 0.4; }
+.rule-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.rule-main { flex: 1; min-width: 0; cursor: pointer; }
+.rule-name { font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rule-sub { font-size: 12px; margin-top: 3px; color: var(--text); overflow-wrap: anywhere; }
+.rule-sub .warn { color: var(--bad); }
+.preview { font-size: 12px; color: var(--accent); margin-top: 4px; }
+.handle { cursor: grab; color: var(--muted); letter-spacing: -3px; user-select: none; padding: 0 2px; }
+
+.switch { position: relative; width: 34px; height: 20px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); cursor: pointer; transition: background 0.15s; }
+.switch span::after { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; border-radius: 50%; background: var(--text); transition: transform 0.15s; }
+.switch input:checked + span { background: var(--ok); }
+.switch input:checked + span::after { transform: translateX(14px); }
+
+.editor { border-top: 1px solid var(--line); padding: 12px; }
+.editor .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.editor .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.editor .wide { grid-column: 1 / -1; }
+.editor label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.editor label.check, .editor label.radio { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
+.editor input:not([type=checkbox]):not([type=radio]), .editor select, .editor textarea { width: 100%; color: var(--text); font-size: 13px; }
+.editor textarea {
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; resize: vertical;
+}
+.editor textarea:invalid { border-color: var(--bad); }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 4px; margin: 0; min-width: 0; }
+legend { color: var(--text); font-weight: 600; font-size: 12px; padding: 0 4px; }
+.kinds { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.kinds .chip { cursor: pointer; }
+.where.dim { opacity: 0.4; }
+.groups-pick { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+details summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
+.editor-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.editor-actions .spacer { flex: 1; }
+
+.chipbox {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 34px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 3px 4px;
+}
+.chipbox:focus-within { border-color: var(--accent); }
+.chips-in { display: contents; }
+.chipbox .suggest-wrap { flex: 1 1 120px; }
+.chipbox input, .editor .chipbox input:not([type=checkbox]) { border: none; background: transparent; padding: 4px; width: 100%; min-width: 80px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 2px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 2px 1px 9px; font-size: 12px; color: var(--text);
+}
+.pill button { border: none; background: transparent; padding: 0 6px; color: var(--muted); line-height: 1; }
+.pill button:hover { color: var(--bad); }
+.suggest-wrap { position: relative; }
+.suggest {
+  position: absolute; left: 0; top: calc(100% + 2px); z-index: 20; min-width: 240px; max-height: 260px; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.suggest .opt { padding: 6px 10px; cursor: pointer; font-size: 13px; color: var(--text); }
+.suggest .opt:hover, .suggest .opt.on { background: var(--accent); color: #04111f; }
+#office-pick { min-width: 260px; }
+
+.office-sum { margin: 4px 0 10px; }
+.office-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--line);
+  border-radius: 8px; margin-bottom: 6px; background: var(--panel); cursor: pointer;
+}
+.office-row.off { opacity: 0.55; }
+.office-row input:disabled + .rule-name { color: var(--muted); }
+
+.group { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
+.group-head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.group-head .spacer { flex: 1; }
+.gname { font-weight: 700; min-width: 180px; }
+
+@media (max-width: 900px) {
+  /* On a phone the bulk tools only appear once something is selected, and don't stick. */
+  .toolbar { position: static; }
+  .bulk-actions.disabled { display: none; }
+  .editor .grid, .editor .grid3 { grid-template-columns: 1fr; }
+  .pane { padding: 10px 12px 40px; }
+  .rule-head { gap: 8px; padding: 10px; }
+  .handle { display: none; }
+  .bulk-actions button, .bulk-actions select { padding: 5px 8px; font-size: 13px; }
+  #office-pick { min-width: 0; width: 100%; }
+  .toolbar .suggest-wrap { flex: 1 1 100%; }
+}
+
+/* Several of these boxes are display:flex, which would otherwise beat the hidden attribute. */
+.rules-page [hidden] { display: none !important; }
+.bulk-actions select { max-width: 220px; }

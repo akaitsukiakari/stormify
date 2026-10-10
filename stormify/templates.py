@@ -17,6 +17,10 @@ NHC products add: storm (e.g. "Tropical Storm Isaias", or the basin for an
 outlook), product ("Advisory 4A"), adv, basin, pressure, movement, location,
 watches (watches/warnings in effect), storm_stats ("45 mph · 1000 mb · ENE at 8 mph").
 They have their own defaults (NHC_TITLE / NHC_BODY).
+
+SPC products add: risk (outlook category, e.g. "ENH"), md_number, concerning
+("Severe potential...Tornado Watch likely"), watch_prob (percent).
+SWPC messages add: scale ("G3"), scale_desc ("G3 (Strong)").
 """
 
 from __future__ import annotations
@@ -32,8 +36,13 @@ DEFAULT_BODY = "{threat}{area_short}\nUntil {expires}\n{nws_headline}"
 PRODUCT_BODY = "{headline}\nIssued {sent}"
 NHC_TITLE = "{storm} · {product}"
 NHC_BODY = "{storm_stats}\n{watches}\n{nws_headline}"
-SOURCE_DEFAULTS = {"nhc": (NHC_TITLE, NHC_BODY)}
+SPC_TITLE = "{status_prefix}{headline}"
+SPC_BODY = "{area}\n{threat}{nws_headline}\nUntil {expires}"
+SWPC_TITLE = "{status_prefix}{headline}"
+SWPC_BODY = "{scale_desc}\nUntil {expires}"
+SOURCE_DEFAULTS = {"nhc": (NHC_TITLE, NHC_BODY), "spc": (SPC_TITLE, SPC_BODY), "swpc": (SWPC_TITLE, SWPC_BODY)}
 NHC_VARS = ("storm", "product", "adv", "basin", "pressure", "movement", "location", "watches", "storm_stats")
+PARAM_VARS = ("risk", "md_number", "concerning", "watch_prob", "scale", "scale_desc")
 
 TAG_LABELS = {
     "emergency": "EMERGENCY",
@@ -110,6 +119,8 @@ def build_vars(a: Alert, user_tz: str = "America/Denver", display: list[str] | N
     }
     for name in NHC_VARS:
         v[name] = str(a.params.get(name, "")) if a.source == "nhc" else ""
+    for name in PARAM_VARS:
+        v[name] = str(a.params.get(name, "")) if a.source in ("spc", "swpc") else ""
     for name in ("sent", "expires"):
         iso = getattr(a, name) or ""
         dt = parse_iso(iso)

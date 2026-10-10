@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from .config import Config
 from .db import Database, utcnow
+from . import images
 from .delivery import Channel, DeliveryError, Notification, channels_for_user
 from .models import SIGNIFICANT_TAGS, Alert
 from .rules import Rule, RuleError, evaluate, load_rules
@@ -34,11 +35,12 @@ class Result:
     logged: int = 0
     failed: int = 0
     notifications: list[tuple[str, Notification]] = field(default_factory=list)  # (user, n) when dry_run
+    new: list[Alert] = field(default_factory=list)
 
 
 def snapshot(a: Alert) -> dict:
     return {"severity_rank": a.severity_rank, "tags": a.tags, "hail_in": a.hail_in,
-            "wind_mph": a.wind_mph, "event": a.event}
+            "wind_mph": a.wind_mph, "event": a.event, "level": a.params.get("level")}
 
 
 def is_significant(prior: dict, a: Alert) -> bool:
@@ -51,6 +53,10 @@ def is_significant(prior: dict, a: Alert) -> bool:
     if (a.hail_in or 0) > (prior.get("hail_in") or 0):
         return True
     if (a.wind_mph or 0) > (prior.get("wind_mph") or 0):
+        return True
+    # SPC outlook risk category or SWPC scale level going up (Slight -> Enhanced, G2 -> G3).
+    level = a.params.get("level")
+    if isinstance(level, int) and isinstance(prior.get("level"), int) and level > prior["level"]:
         return True
     return a.event != prior.get("event", a.event)
 
@@ -65,11 +71,12 @@ class Engine:
         self.tz_lookup = tz_lookup
 
     # ---- helpers -------------------------------------------------------
-    def _rules_for(self, user_id: int) -> list[Rule]:
+    def _rules_for(self, user: dict) -> list[Rule]:
         try:
-            return load_rules(self.db.list_rules(user_id, enabled_only=True))
+            return load_rules(self.db.list_rules(user["id"], enabled_only=True),
+                              (user.get("settings") or {}).get("office_groups"))
         except RuleError as e:
-            log.error("user %s has an invalid rule, skipping their rules: %s", user_id, e)
+            log.error("user %s has an invalid rule, skipping their rules: %s", user["id"], e)
             return []
 
     def _fill_tz(self, a: Alert) -> None:
@@ -93,8 +100,14 @@ class Engine:
         body = render((rule.body_template if rule else None) or default_body, v)
         if "emergency" in a.tag_set:
             priority = 5
-        click = f"{self.cfg.public_url.rstrip('/')}/?alert={quote(a.id, safe='')}" if self.cfg.public_url else None
-        return Notification(title=title, body=body, priority=priority, click_url=click,
+        base = self.cfg.public_url.rstrip("/")
+        click = f"{base}/?alert={quote(a.id, safe='')}" if base else None
+        image = None
+        # The phone fetches the picture from the dashboard, so it needs a public address to reach.
+        if (base and self.cfg.notification_images and status != "CANCELLED"
+                and images.available() and images.drawable(a)):
+            image = f"{base}/img/{self.db.image_token(a.id)}.png"
+        return Notification(title=title, body=body, priority=priority, click_url=click, image_url=image,
                             group=a.thread_key, is_test="test" in a.tag_set,
                             tags=[t for t in a.tags if t != "test"])
 
@@ -161,6 +174,7 @@ class Engine:
         new = [a for a in alerts if a.id not in known]
         res.seen_alerts = len(alerts) - len(new)
         res.new_alerts = len(new)
+        res.new = new
         if not new:
             return res
 
@@ -170,7 +184,7 @@ class Engine:
             self._fill_tz(a)
 
         users = self.db.list_users()
-        rules_by_user = {u["id"]: self._rules_for(u["id"]) for u in users}
+        rules_by_user = {u["id"]: self._rules_for(u) for u in users}
         # Per user: thread_key -> queued push. A newer alert in the same thread
         # replaces the queued one so a single storm buzzes once per poll.
         pending: dict[int, dict[str, Pending]] = {u["id"]: {} for u in users}

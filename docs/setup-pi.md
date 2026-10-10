@@ -59,7 +59,7 @@ Add public hostnames to your existing Cloudflare tunnel (Zero Trust dashboard â†
 
 If the tunnel connector (`cloudflared`) runs on a different machine than the Stormify Pi, set `host = "0.0.0.0"` under `[web]` in the config so the dashboard listens on your LAN. If `cloudflared` runs on the Stormify Pi itself, `127.0.0.1` / `localhost` is fine.
 
-Then set `public_url = "https://wx.yourdomain.com"` in the config, so tapping a notification opens the alert in the dashboard.
+Then set `public_url = "https://wx.yourdomain.com"` in the config, so tapping a notification opens the alert in the dashboard and pushes can carry a map picture (your phone fetches it from that address).
 
 **DNS note:** Cloudflare Tunnel public hostnames only work for a domain whose DNS is on Cloudflare. If your DreamHost domain's DNS is still at DreamHost, either move that domain's nameservers to Cloudflare (free plan), or use whichever domain your old Home Assistant tunnel used. Check how the existing tunnel is set up before changing anything.
 

@@ -1,0 +1,18 @@
+{
+  "stormify_rules": 1,
+  "rules": [
+    {
+      "name": "Strong geomagnetic storms (G3+)",
+      "tags_any": ["g3", "g4", "g5"],
+      "scope": {"offices": ["SWPC"]},
+      "action": "push",
+      "priority": 3,
+      "on_update": "significant"
+    },
+    {
+      "name": "Space weather (dashboard only)",
+      "scope": {"offices": ["SWPC"]},
+      "action": "log"
+    }
+  ]
+}

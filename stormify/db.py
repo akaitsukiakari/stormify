@@ -9,6 +9,7 @@ day one so multi-user is a non-event later.
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -62,6 +63,7 @@ CREATE INDEX IF NOT EXISTS alerts_event ON alerts(event);
 CREATE INDEX IF NOT EXISTS alerts_office ON alerts(office);
 CREATE INDEX IF NOT EXISTS alerts_kind ON alerts(kind);
 CREATE INDEX IF NOT EXISTS alerts_first_seen ON alerts(first_seen);
+CREATE INDEX IF NOT EXISTS alerts_source ON alerts(source);
 
 -- What each user's rules decided about each alert (drives the per-user feed).
 CREATE TABLE IF NOT EXISTS decisions (
@@ -90,7 +92,16 @@ CREATE INDEX IF NOT EXISTS deliveries_thread ON deliveries(user_id, thread_key);
 CREATE TABLE IF NOT EXISTS zones (
     id TEXT PRIMARY KEY,
     tz TEXT,
-    fetched_at TEXT NOT NULL
+    fetched_at TEXT NOT NULL,
+    shape_json TEXT,                -- simplified outline: list of polygons, or NULL if none
+    shape_at TEXT                   -- when the outline was looked up (NULL = never)
+);
+
+-- Unguessable links to notification map images (the phone fetches them without logging in).
+CREATE TABLE IF NOT EXISTS image_tokens (
+    token TEXT PRIMARY KEY,
+    alert_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS heartbeat (
@@ -119,6 +130,14 @@ class Database:
         self.path = path
         self._local = threading.local()
         self.conn.executescript(SCHEMA)  # executescript manages its own transaction
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Columns added after v0.1, for databases created before them."""
+        have = {r[1] for r in self.conn.execute("PRAGMA table_info(zones)")}
+        for col in ("shape_json", "shape_at"):
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE zones ADD COLUMN {col} TEXT")
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -206,6 +225,9 @@ class Database:
     def has_any_alerts(self) -> bool:
         return self.conn.execute("SELECT 1 FROM alerts LIMIT 1").fetchone() is not None
 
+    def has_source(self, source: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM alerts WHERE source=? LIMIT 1", (source,)).fetchone() is not None
+
     def known_alert_ids(self, ids: list[str]) -> set[str]:
         known: set[str] = set()
         for i in range(0, len(ids), 500):
@@ -250,17 +272,18 @@ class Database:
     LITE_DROP = ("description", "instruction", "nws_headline", "zones", "same", "vtec", "references",
                  "params", "certainty", "urgency", "effective", "onset", "states", "status", "url",
                  "thread_key", "severity", "vtec_action")
-    # The only raw parameter the dashboard reads (an NHC storm's name). NWS parameters carry long
-    # reference lists that used to be most of the payload, so lite rows keep just this one.
-    LITE_PARAMS = ("storm",)
+    # The only raw parameters the dashboard reads (an NHC storm's name, where a shape came from, an SPC
+    # outlook's risk areas). NWS parameters carry long reference lists that used to be most of the
+    # payload, so lite rows keep just these.
+    LITE_PARAMS = ("storm", "geometry_source", "risk_labels", "day")
 
     def lite_dict(self, d: dict) -> dict:
         """Python version of the lite trim, for a row that didn't come through query_feed_json."""
         params = d.get("params") or {}
         d = {k: v for k, v in d.items() if k not in self.LITE_DROP}
-        if d.get("source") != "nhc":
+        if d.get("source") not in ("nhc", "spc", "swpc"):
             d.pop("headline", None)
-        d["params"] = {k: params.get(k) for k in self.LITE_PARAMS}
+        d["params"] = {k: params[k] for k in self.LITE_PARAMS if params.get(k) is not None}
         return d
 
     def _feed_where(self, since: str | None, until: str | None, events: list[str] | None,
@@ -319,11 +342,12 @@ class Database:
         day put a couple thousand alerts in the feed.
         """
         where, args = self._feed_where(since, until, events, offices, kinds, action, q, active_only)
-        # Only NHC products are labeled by their headline; NWS headlines just repeat the card.
+        # NHC, SPC and SWPC products are labeled by their headline; NWS headlines just repeat the card.
         drop = ", ".join([*(f"'$.{k}'" for k in self.LITE_DROP),
-                          "CASE WHEN a.source = 'nhc' THEN '$.__keep' ELSE '$.headline' END"])
+                          "CASE WHEN a.source IN ('nhc', 'spc', 'swpc') THEN '$.__keep' ELSE '$.headline' END"])
         keep = ", ".join(f"'{k}', json_extract(a.data_json, '$.params.{k}')" for k in self.LITE_PARAMS)
-        data = (f"json_set(json_remove(a.data_json, {drop}), '$.params', json_object({keep}),"
+        # json_patch drops the null ones, so a plain NWS alert carries "params": {}.
+        data = (f"json_set(json_remove(a.data_json, {drop}), '$.params', json_patch('{{}}', json_object({keep})),"
                 " '$.first_seen', a.first_seen, '$.action', coalesce(d.action, 'log'),"
                 " '$.reason', coalesce(d.reason, ''), '$.matched_rules', json(coalesce(d.rules_json, '[]')))")
         sql = [f"SELECT a.id, {data} FROM alerts a"
@@ -348,6 +372,7 @@ class Database:
     def prune(self, keep_days: int) -> int:
         with self.tx() as c:
             cur = c.execute("DELETE FROM alerts WHERE julianday('now') - julianday(first_seen) > ?", (keep_days,))
+            c.execute("DELETE FROM image_tokens WHERE alert_id NOT IN (SELECT id FROM alerts)")
             return cur.rowcount
 
     # ---- deliveries ----------------------------------------------------
@@ -375,14 +400,55 @@ class Database:
             "SELECT 1 FROM deliveries WHERE user_id=? AND alert_id=? AND status='sent' LIMIT 1",
             (user_id, alert_id)).fetchone() is not None
 
-    # ---- zones (time zone cache) ----------------------------------------
+    # ---- zones (time zone + outline cache) ------------------------------
     def zone_tz(self, zone_id: str) -> str | None:
         row = self.conn.execute("SELECT tz FROM zones WHERE id=?", (zone_id,)).fetchone()
         return row[0] if row else None
 
     def set_zone_tz(self, zone_id: str, tz: str) -> None:
         with self.tx() as c:
-            c.execute("INSERT OR REPLACE INTO zones (id, tz, fetched_at) VALUES (?,?,?)", (zone_id, tz, utcnow()))
+            c.execute("INSERT INTO zones (id, tz, fetched_at) VALUES (?,?,?)"
+                      " ON CONFLICT(id) DO UPDATE SET tz=excluded.tz, fetched_at=excluded.fetched_at",
+                      (zone_id, tz, utcnow()))
+
+    def set_zone_shape(self, zone_id: str, shape: list | None, tz: str | None = None) -> None:
+        now = utcnow()
+        with self.tx() as c:
+            c.execute("INSERT INTO zones (id, tz, fetched_at, shape_json, shape_at) VALUES (?,?,?,?,?)"
+                      " ON CONFLICT(id) DO UPDATE SET shape_json=excluded.shape_json, shape_at=excluded.shape_at,"
+                      " tz=coalesce(zones.tz, excluded.tz)",
+                      (zone_id, tz, now, json.dumps(shape) if shape else None, now))
+
+    def zone_shapes(self, zone_ids: list[str]) -> dict[str, list | None]:
+        """Looked-up outlines by zone (None = looked up, no outline). Zones never looked up are absent."""
+        out: dict[str, list | None] = {}
+        for i in range(0, len(zone_ids), 500):
+            chunk = zone_ids[i:i + 500]
+            q = ",".join("?" * len(chunk))
+            for r in self.conn.execute(
+                    f"SELECT id, shape_json FROM zones WHERE shape_at IS NOT NULL AND id IN ({q})", chunk):
+                out[r[0]] = json.loads(r[1]) if r[1] else None
+        return out
+
+    def set_alert_geometry(self, alert_id: str, geometry: dict, source: str) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE alerts SET data_json=json_set(data_json, '$.geometry', json(?),"
+                      " '$.params.geometry_source', ?) WHERE id=?", (json.dumps(geometry), source, alert_id))
+
+    # ---- notification image links --------------------------------------
+    def image_token(self, alert_id: str) -> str:
+        row = self.conn.execute("SELECT token FROM image_tokens WHERE alert_id=? LIMIT 1", (alert_id,)).fetchone()
+        if row:
+            return row[0]
+        token = secrets.token_urlsafe(18)
+        with self.tx() as c:
+            c.execute("INSERT INTO image_tokens (token, alert_id, created_at) VALUES (?,?,?)",
+                      (token, alert_id, utcnow()))
+        return token
+
+    def alert_for_image(self, token: str) -> str | None:
+        row = self.conn.execute("SELECT alert_id FROM image_tokens WHERE token=?", (token,)).fetchone()
+        return row[0] if row else None
 
     # ---- heartbeat -----------------------------------------------------
     def heartbeat(self) -> dict:
