@@ -477,8 +477,9 @@ class Database:
 
     def zone_shapes_version(self, prefix: str) -> tuple:
         """Changes whenever an outline for this prefix is added or looked up again."""
-        return tuple(self.conn.execute("SELECT COUNT(*), max(shape_at) FROM zones WHERE shape_at IS NOT NULL"
-                                       " AND id >= ? AND id < ?", self._zone_range(prefix)).fetchone())
+        return tuple(self.conn.execute(
+            "SELECT COUNT(*), max(shape_at), total(length(shape_json)) FROM zones"
+            " WHERE shape_at IS NOT NULL AND id >= ? AND id < ?", self._zone_range(prefix)).fetchone())
 
     def zone_shapes_json(self, prefix: str) -> str:
         """Every looked-up outline for one state's zones or counties ("COZ", "KSC") as one JSON object
