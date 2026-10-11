@@ -272,10 +272,11 @@
     $("count").textContent = total > alerts.length
       ? `Newest ${alerts.length.toLocaleString()} of ${total.toLocaleString()} alerts`
       : `${alerts.length.toLocaleString()} alert${alerts.length === 1 ? "" : "s"}`;
-    polyGroup.clearLayers();
-    layers.clear();
     const list = $("list");
     if (!alerts.length) {
+      polyGroup.clearLayers();
+      layers.clear();
+      lit = null;
       renderLegend();
       list.innerHTML = `<div class="empty">Nothing here for these filters.<br>Quiet skies, or widen the time range.</div>`;
       return;
@@ -284,11 +285,33 @@
     // issuance plus Days 2 and 3 on top of each other would bury everything else. Older ones and
     // Days 2-3 draw when you pick them.
     newestDay1 = alerts.find((a) => isOutlook(a) && (a.params || {}).day === 1)?.id;
+    // Likewise only the latest issuance of each alert: every update of a long-running advisory
+    // repeats its shape, and stacking them all made the map slow to draw. Earlier updates draw
+    // when you pick them. (Segments of one product share its send time, so they all count as latest.)
+    const latest = new Map();
+    for (const a of alerts) {
+      const t = Date.parse(a.sent) || 0;
+      if (a.thread_key && !(latest.get(a.thread_key) >= t)) latest.set(a.thread_key, t);
+    }
+    const drawn = (a) => a.id === selected || (isOutlook(a) ? a.id === newestDay1
+      : !a.thread_key || (Date.parse(a.sent) || 0) >= latest.get(a.thread_key));
+    // Keep the layers already on the map and only build the new ones; rebuilding every shape each
+    // time an alert arrived was most of the redraw work.
+    const byId = new Map(alerts.map((a) => [a.id, a]));
+    let changed = false;
+    for (const [id, layer] of layers) {
+      const a = byId.get(id);
+      if (a && a.geometry && drawn(a)) { layer.alert = a; continue; }
+      if (lit === layer) lit = null;
+      polyGroup.removeLayer(layer);
+      layers.delete(id);
+      changed = true;
+    }
+    for (const a of alerts) {
+      if (!layers.has(a.id) && drawn(a) && addLayer(a)) changed = true;
+    }
     // Draw outlooks under watches under warnings under emergencies.
-    [...alerts].sort((a, b) => drawOrder(a) - drawOrder(b)).forEach((a) => {
-      if (isOutlook(a) && a.id !== newestDay1 && a.id !== selected) return;
-      addLayer(a);
-    });
+    if (changed) applyVisibility();
     highlight(selected);
     renderLegend();
 
@@ -329,7 +352,7 @@
       // Storm centers (NHC advisories) are points; their forecast track is a line.
       pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
     });
-    layer.on("click", (e) => { L.DomEvent.stopPropagation(e); mapTap(a); });
+    layer.on("click", (e) => { L.DomEvent.stopPropagation(e); mapTap(layer.alert); });
     layer.bindTooltip(`${esc(labelFor(a))} · ${esc(officeLabel(a.office))}`, { sticky: true });
     layer.addTo(polyGroup);
     if (isOutlook(a)) layer.bringToBack();

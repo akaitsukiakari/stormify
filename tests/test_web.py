@@ -1,3 +1,6 @@
+import gzip
+import json
+
 import pytest
 from fixtures import collection
 from werkzeug.security import generate_password_hash
@@ -195,6 +198,8 @@ def test_zone_built_shapes_come_from_api_zones_not_the_feed(client, db):
     assert "geometry" not in w and w["zones"] == ["KSC173", "KSC015"]
     assert w["params"] == {"geometry_source": "zones"}
     assert all("zones" not in a for a in lite if a["id"] != watch["id"])
+    # Updates of one alert share a thread, so the map can draw just the latest.
+    assert all("thread_key" in a for a in lite) and w["thread_key"] == "KICT.TO.A.0412.2026"
     # The selected-alert path trims the same way.
     extra = client.get(f"/api/alerts?hours=0&lite=1&kind=Outlook&id={watch['id']}").json["alerts"][0]
     assert "geometry" not in extra and extra["zones"] == ["KSC173", "KSC015"]
@@ -205,6 +210,11 @@ def test_zone_built_shapes_come_from_api_zones_not_the_feed(client, db):
     assert r.json == {"KSC015": None, "KSC173": square}
     assert "max-age" in r.headers["Cache-Control"]
     assert client.get("/api/zones/KSC", headers={"If-None-Match": r.headers["ETag"]}).status_code == 304
+    packed = client.get("/api/zones/KSC", headers={"Accept-Encoding": "gzip"})
+    assert packed.headers["Content-Encoding"] == "gzip" and packed.headers["ETag"] == r.headers["ETag"]
+    assert json.loads(gzip.decompress(packed.data)) == r.json
+    db.set_zone_shape("KSC015", square)  # a new lookup changes the answer
+    assert client.get("/api/zones/KSC").json["KSC015"] == square
     assert client.get("/api/zones/KSZ").json == {}
     assert client.get("/api/zones/ks").status_code == 400
 

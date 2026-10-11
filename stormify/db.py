@@ -293,10 +293,12 @@ class Database:
     def lite_dict(self, d: dict) -> dict:
         """Python version of the lite trim, for a row that didn't come through query_feed_json."""
         params = d.get("params") or {}
+        thread_key = d.get("thread_key") or ""
         zoned = params.get("geometry_source") == "zones"
         d = {k: v for k, v in d.items() if k not in self.LITE_DROP or (zoned and k == "zones")}
         if zoned:
             d.pop("geometry", None)
+        d["thread_key"] = thread_key
         if d.get("source") not in ("nhc", "spc", "swpc"):
             d.pop("headline", None)
         d["params"] = {k: params[k] for k in self.LITE_PARAMS if params.get(k) is not None}
@@ -387,7 +389,7 @@ class Database:
         """
         where, args = self._feed_where(since, until, events, offices, kinds, action, q, active_only)
         lite = "l.json" if self.lite_ready() else self._lite_sql()
-        data = (f"json_set({lite}, '$.first_seen', a.first_seen, '$.action', coalesce(d.action, 'log'),"
+        data = (f"json_set({lite}, '$.first_seen', a.first_seen, '$.thread_key', coalesce(a.thread_key, ''), '$.action', coalesce(d.action, 'log'),"
                 " '$.reason', coalesce(d.reason, ''), '$.matched_rules', json(coalesce(d.rules_json, '[]')))")
         join = " JOIN alert_lite l ON l.id=a.id" if self.lite_ready() else ""
         sql = [f"SELECT a.id, {data} FROM alerts a{join}"
@@ -470,12 +472,20 @@ class Database:
                 out[r[0]] = json.loads(r[1]) if r[1] else None
         return out
 
+    def _zone_range(self, prefix: str) -> tuple[str, str]:
+        return prefix, prefix[:-1] + chr(ord(prefix[-1]) + 1)
+
+    def zone_shapes_version(self, prefix: str) -> tuple:
+        """Changes whenever an outline for this prefix is added or looked up again."""
+        return tuple(self.conn.execute(
+            "SELECT COUNT(*), max(shape_at), total(length(shape_json)) FROM zones"
+            " WHERE shape_at IS NOT NULL AND id >= ? AND id < ?", self._zone_range(prefix)).fetchone())
+
     def zone_shapes_json(self, prefix: str) -> str:
         """Every looked-up outline for one state's zones or counties ("COZ", "KSC") as one JSON object
         (null = no outline), stitched from the stored text without parsing it."""
-        hi = prefix[:-1] + chr(ord(prefix[-1]) + 1)
         rows = self.conn.execute("SELECT id, shape_json FROM zones WHERE shape_at IS NOT NULL AND id >= ? AND id < ?"
-                                 " ORDER BY id", (prefix, hi))
+                                 " ORDER BY id", self._zone_range(prefix))
         return "{" + ",".join(f'"{r[0]}":{r[1] or "null"}' for r in rows) + "}"
 
     def set_alert_geometry(self, alert_id: str, geometry: dict, source: str) -> None:
