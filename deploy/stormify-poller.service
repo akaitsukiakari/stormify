@@ -11,6 +11,8 @@ Restart=always
 RestartSec=10
 # Keep memory in check on a 512 MB Pi Zero W.
 MemoryMax=150M
+# Past that, restart the service instead of swapping it out: a swapping Pi Zero locks up entirely.
+MemorySwapMax=0
 
 [Install]
 WantedBy=multi-user.target

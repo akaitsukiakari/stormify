@@ -10,6 +10,8 @@ ExecStart=/opt/stormify/venv/bin/stormify web
 Restart=always
 RestartSec=10
 MemoryMax=150M
+# Past that, restart the service instead of swapping it out: a swapping Pi Zero locks up entirely.
+MemorySwapMax=0
 
 [Install]
 WantedBy=multi-user.target
