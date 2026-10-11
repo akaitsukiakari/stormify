@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import functools
+import gzip
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -118,6 +120,8 @@ def create_app(cfg: Config, db: Database) -> Flask:
         return resp
 
     # ---- feed API ------------------------------------------------------------
+    zone_cache: dict[str, tuple] = {}  # prefix -> (version, etag, json, gzipped json)
+
     def _list_arg(name: str) -> list[str]:
         out: list[str] = []
         for v in request.args.getlist(name):
@@ -179,10 +183,22 @@ def create_app(cfg: Config, db: Database) -> Flask:
         alert's zones instead of repeating their outlines, and the dashboard draws them from these."""
         if not re.fullmatch(r"[A-Z]{2}[CZ]", prefix):
             return jsonify(error="bad prefix"), 400
-        resp = Response(db.zone_shapes_json(prefix), mimetype="application/json")
+        # Built and gzipped once per change: all of them together run to megabytes over the Pi's Wi-Fi.
+        version = db.zone_shapes_version(prefix)
+        hit = zone_cache.get(prefix)
+        if not hit or hit[0] != version:
+            body = db.zone_shapes_json(prefix).encode()
+            hit = zone_cache[prefix] = (version, hashlib.sha1(body).hexdigest(), body,
+                                        gzip.compress(body, compresslevel=6, mtime=0))
+        _, etag, body, packed = hit
+        gz = "gzip" in (request.headers.get("Accept-Encoding") or "")
+        resp = Response(packed if gz else body, mimetype="application/json")
+        if gz:
+            resp.headers["Content-Encoding"] = "gzip"
+        resp.headers["Vary"] = "Accept-Encoding"
         # Zones almost never change; a zone looked up after this was cached makes the dashboard ask again.
-        resp.headers["Cache-Control"] = "private, max-age=3600"
-        resp.add_etag()
+        resp.headers["Cache-Control"] = "private, max-age=86400"
+        resp.set_etag(etag)
         return resp.make_conditional(request)
 
     @app.route("/api/alert")
