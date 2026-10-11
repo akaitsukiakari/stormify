@@ -183,7 +183,15 @@
   // the browser hands back its cached copy); skip the redraw then so a phone isn't rebuilding
   // hundreds of polygons and cards for nothing.
   let lastQuery = "", lastText = "";
+  // A slow Pi can take longer than the minute between refreshes; don't stack a second request
+  // behind one that's still running (filter changes still go through).
+  let loading = null;
   async function load(reset) {
+    if (loading && reset === undefined) return loading;
+    const run = loading = loadNow(reset);
+    try { return await run; } finally { if (loading === run) loading = null; }
+  }
+  async function loadNow(reset) {
     try {
       const q = params().toString();
       const [r] = await Promise.all([getJSON("/api/alerts?" + q), metaReady]);
@@ -210,15 +218,21 @@
     if (!r.ok) throw new Error("zones " + r.status);
     for (const [z, shape] of Object.entries(await r.json())) zoneShapes.set(z, shape);
   }
+  // Two at a time, so a first visit asking for dozens of states doesn't tie up every worker on the Pi.
+  async function fetchEach(prefixes, fresh) {
+    const queue = [...prefixes];
+    const worker = async () => { while (queue.length) await fetchZones(queue.shift(), fresh); };
+    await Promise.all([worker(), worker()]);
+  }
   async function attachZoneShapes(list) {
     const zoned = list.filter((a) => !a.geometry && (a.params || {}).geometry_source === "zones" && a.zones);
     const missing = () => [...new Set(zoned.flatMap((a) => a.zones).filter((z) => UGC.test(z) && !zoneShapes.has(z)))];
     const prefixes = (zones) => [...new Set(zones.map((z) => z.slice(0, 3)))];
     let ok = true;
     try {
-      await Promise.all(prefixes(missing()).map((p) => fetchZones(p, false)));
+      await fetchEach(prefixes(missing()), false);
       // Still missing: the cached copy is from before that zone was looked up, so ask the Pi again.
-      await Promise.all(prefixes(missing()).map((p) => fetchZones(p, true)));
+      await fetchEach(prefixes(missing()), true);
       missing().forEach((z) => zoneShapes.set(z, null));  // don't keep asking for it every minute
     } catch (e) {
       if (e.message === "login") throw e;
