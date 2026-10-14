@@ -54,6 +54,9 @@ def test_feed_and_filters(client):
     assert len(pushed) == 6
     bou = client.get("/api/alerts?hours=0&office=bou").json["alerts"]
     assert bou and all(a["office"] == "BOU" for a in bou)
+    # The dashboard's multi-select sends each pick as its own parameter.
+    two = client.get("/api/alerts?hours=0&office=BOU&office=OUN").json["alerts"]
+    assert {a["office"] for a in two} == {"BOU", "OUN"}
     q = client.get("/api/alerts?hours=0&q=baseball").json["alerts"]
     assert len(q) == 1 and q[0]["office"] == "OUN"
     meta = client.get("/api/meta").json
