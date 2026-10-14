@@ -149,7 +149,7 @@ body.dash { display: flex; flex-direction: column; }
   color: var(--text); font-size: 12px; max-width: 260px; max-height: 45vh; overflow-y: auto;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
-.legend[hidden] { display: none; }
+.legend-empty { color: var(--muted); padding: 2px 0; }
 .legend-head {
   display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px;
   font-weight: 700; cursor: pointer; user-select: none;
@@ -204,3 +204,17 @@ body.dash { display: flex; flex-direction: column; }
   .ms { flex: 1 1 140px; }
   .ms-btn { width: 100%; min-width: 0; max-width: none; }
 }
+
+/* Loading pill over the top of the map. */
+.busy {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000;
+  display: flex; align-items: center; gap: 8px; padding: 5px 12px; font-size: 12px; pointer-events: none;
+  background: rgba(18, 22, 29, 0.92); border: 1px solid var(--line); border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+.busy[hidden] { display: none; }
+.spin {
+  width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

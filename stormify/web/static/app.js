@@ -61,6 +61,7 @@
 
   let meta = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, time_display: ["local", "event", "zulu"] };
   let alerts = [];
+  let loadedOnce = false, loadFailed = false;  // the legend says "Loading" until the first answer comes back
   let total = 0;
   // Cards are drawn a page at a time so a long list doesn't bog down a phone.
   const LIST_PAGE = 100;
@@ -159,7 +160,7 @@
   // every 5 minutes; the tiles are re-asked for on that cadence while the layer is on.
   const RADAR_URL = "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png";
   const radar = L.tileLayer(RADAR_URL, {
-    attribution: 'Radar: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>',
+    attribution: 'Radar: <a href="https://mesonet.agron.iastate.edu/">IEM</a>',
     opacity: 0.6, zIndex: 5, maxZoom: 19, maxNativeZoom: 12,
   });
   let radarOn = true;
@@ -276,7 +277,22 @@
     const run = loading = loadNow(reset);
     try { return await run; } finally { if (loading === run) loading = null; }
   }
+  // A small "Loading" pill over the map while alerts (and any zone outlines) are on their way.
+  // It waits a moment before showing, so the quick minute refreshes don't make it blink.
+  const busy = L.DomUtil.create("div", "busy", map.getContainer());
+  busy.innerHTML = `<span class="spin" aria-hidden="true"></span>Loading alerts…`;
+  busy.setAttribute("role", "status");
+  busy.hidden = true;
+  let busyCount = 0, busyTimer = null;
+  function setBusy(on) {
+    busyCount += on ? 1 : -1;
+    clearTimeout(busyTimer);
+    if (busyCount > 0) busyTimer = setTimeout(() => { busy.hidden = false; }, 250);
+    else busy.hidden = true;
+  }
+
   async function loadNow(reset) {
+    setBusy(true);
     try {
       const q = params().toString();
       const [r] = await Promise.all([getJSON("/api/alerts?" + q), metaReady]);
@@ -288,10 +304,14 @@
         alerts = j.alerts || [];
         total = j.total ?? alerts.length;
         lastQuery = q; lastText = shapesOk ? text : "";
+        loadedOnce = true;
         render();
       }
       $("updated").textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    } catch (e) { if (e.message !== "login") $("count").textContent = "Could not load alerts"; }
+      loadFailed = false;
+    } catch (e) {
+      if (e.message !== "login") { $("count").textContent = "Could not load alerts"; loadFailed = true; renderLegend(); }
+    } finally { setBusy(false); }
   }
 
   // Alerts that only list zones arrive with their zone codes instead of an outline; the outlines
@@ -639,15 +659,23 @@
         rank: emergency ? -1 : (rank[a.kind] ?? 2),
       });
     }
-    if (!rows.size) { el.hidden = true; return; }
-    el.hidden = false;
+    const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: meta.timezone, timeZoneName: "short" });
+    const head = `<div class="legend-head"><span>Legend</span><span class="legend-toggle" aria-hidden="true"></span></div>`;
+    // Nothing drawn here: say why instead of leaving an empty map with no explanation.
+    if (!rows.size) {
+      const why = !loadedOnce ? (loadFailed ? "Could not load alerts." : "Loading alerts…")
+        : !alerts.length ? "No alerts match the filters."
+        : !layers.size ? "None of these alerts have a map shape."
+        : "No alerts in this part of the map.";
+      el.innerHTML = `${head}<div class="legend-body"><div class="legend-empty">${why}</div><div class="legend-note">Stormify · ${esc(now)}</div></div>`;
+      return;
+    }
     const items = [...rows.values()].sort((x, y) => (x.storm ? 0 : 1) - (y.storm ? 0 : 1) || x.rank - y.rank || x.label.localeCompare(y.label));
     const hasStorm = items.some((e) => e.storm);
     const hasZoned = items.some((e) => e.zoned);
-    const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: meta.timezone, timeZoneName: "short" });
     const anyOff = items.some((e) => hiddenKeys.has(e.key));
     const anyOn = items.some((e) => !hiddenKeys.has(e.key));
-    el.innerHTML = `<div class="legend-head"><span>Legend</span><span class="legend-toggle" aria-hidden="true"></span></div>
+    el.innerHTML = `${head}
       <div class="legend-body">
         <div class="legend-all">
           <button type="button" data-all="show"${anyOff ? "" : " disabled"}>Show all</button>
@@ -750,6 +778,7 @@
     toast(r.ok ? "Test notification sent." : (j.error || "Test failed."));
   });
 
+  renderLegend();  // "Loading alerts…" until the first answer
   // Meta and alerts load side by side; alerts wait for meta only before drawing (it sets the time zone).
   const metaReady = loadMeta();
   load();
