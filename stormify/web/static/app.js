@@ -61,6 +61,7 @@
 
   let meta = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, time_display: ["local", "event", "zulu"] };
   let alerts = [];
+  let loadedOnce = false, loadFailed = false;  // the legend says "Loading" until the first answer comes back
   let total = 0;
   // Cards are drawn a page at a time so a long list doesn't bog down a phone.
   const LIST_PAGE = 100;
@@ -74,6 +75,70 @@
   const hiddenKeys = new Set();
   try { JSON.parse(localStorage.getItem("hiddenPolys") || "[]").forEach((k) => hiddenKeys.add(k)); } catch { /* ignore */ }
   const saveHidden = () => { try { localStorage.setItem("hiddenPolys", JSON.stringify([...hiddenKeys])); } catch { /* ignore */ } };
+
+  // ---- multi-select dropdown: a button that opens a searchable list of checkboxes ----------
+  // Fires "ms-change" on its element whenever the picked set changes.
+  function multiSelect(el, labelOf = (v) => v) {
+    const picked = new Set();
+    let options = [];
+    const placeholder = el.dataset.placeholder, noun = el.dataset.noun;
+    el.innerHTML = `<button type="button" class="ms-btn" aria-haspopup="true" aria-expanded="false"></button>
+      <div class="ms-pop" hidden>
+        <input type="search" class="ms-search" placeholder="Search…" autocomplete="off">
+        <div class="ms-list" role="group"></div>
+        <div class="ms-foot"><span class="muted small ms-n"></span><button type="button" class="ms-clear">Clear</button></div>
+      </div>`;
+    const btn = el.querySelector(".ms-btn"), pop = el.querySelector(".ms-pop");
+    const search = el.querySelector(".ms-search"), list = el.querySelector(".ms-list");
+    const label = () => {
+      const v = [...picked];
+      btn.textContent = !v.length ? placeholder : v.length <= 2 ? v.join(", ") : `${v.length} ${noun}`;
+      btn.title = v.length ? v.map(labelOf).join("\n") : placeholder;
+      btn.classList.toggle("on", v.length > 0);
+      el.querySelector(".ms-n").textContent = v.length ? `${v.length} picked` : "";
+    };
+    // Picked ones first, then the rest; the search matches the label (code or city for offices).
+    const draw = () => {
+      const q = search.value.trim().toLowerCase();
+      const all = [...new Set([...picked, ...options])];
+      const rows = all.filter((v) => !q || labelOf(v).toLowerCase().includes(q))
+        .sort((a, b) => (picked.has(b) - picked.has(a)) || a.localeCompare(b));
+      list.innerHTML = rows.length
+        ? rows.map((v) => `<label class="ms-row"><input type="checkbox" value="${esc(v)}"${picked.has(v) ? " checked" : ""}><span>${esc(labelOf(v))}</span></label>`).join("")
+        : `<div class="muted small ms-none">Nothing matches.</div>`;
+    };
+    const changed = () => { label(); el.dispatchEvent(new Event("ms-change", { bubbles: true })); };
+    const open = (on) => {
+      pop.hidden = !on;
+      btn.setAttribute("aria-expanded", String(on));
+      if (!on) return;
+      search.value = "";
+      draw();
+      // Keep the panel on screen when the button sits near the right edge (phones).
+      pop.style.left = "0"; pop.style.right = "auto";
+      if (pop.getBoundingClientRect().right > window.innerWidth - 8) { pop.style.left = "auto"; pop.style.right = "0"; }
+      if (!mobile.matches) search.focus();
+    };
+    btn.addEventListener("click", () => open(pop.hidden));
+    search.addEventListener("input", (e) => { e.stopPropagation(); draw(); });
+    list.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const v = e.target.value;
+      e.target.checked ? picked.add(v) : picked.delete(v);
+      changed();
+    });
+    el.querySelector(".ms-clear").addEventListener("click", () => { picked.clear(); draw(); changed(); });
+    document.addEventListener("click", (e) => { if (!pop.hidden && !el.contains(e.target)) open(false); });
+    el.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { e.stopPropagation(); open(false); btn.focus(); } });
+    label();
+    return {
+      get: () => [...picked],
+      setOptions(list) { options = list; if (!pop.hidden) draw(); },
+    };
+  }
+
+  const officePick = multiSelect($("f-office"), officeLabel);
+  const eventPick = multiSelect($("f-event"));
 
   // ---- map ----------------------------------------------------------------
   const map = L.map("map", { zoomControl: true, preferCanvas: true }).setView([39, -97], 4);
@@ -89,6 +154,27 @@
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: OSM_ATTR, maxZoom: 19 }).addTo(map);
   }
   const polyGroup = L.featureGroup().addTo(map);
+
+  // ---- radar: NEXRAD base reflectivity mosaic, straight from Iowa State's tile cache ----------
+  // The browser fetches these itself, so the Pi does no work for them. IEM rebuilds the mosaic
+  // every 5 minutes; the tiles are re-asked for on that cadence while the layer is on.
+  const RADAR_URL = "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png";
+  const radar = L.tileLayer(RADAR_URL, {
+    attribution: 'Radar: <a href="https://mesonet.agron.iastate.edu/">IEM</a>',
+    opacity: 0.6, zIndex: 5, maxZoom: 19, maxNativeZoom: 12,
+  });
+  let radarOn = true;
+  try { radarOn = localStorage.getItem("radar") !== "0"; } catch { /* ignore */ }
+  if (radarOn) radar.addTo(map);
+  L.control.layers(null, { Radar: radar }, { position: "topright", collapsed: false }).addTo(map);
+  map.on("overlayadd overlayremove", (e) => {
+    if (e.layer !== radar) return;
+    try { localStorage.setItem("radar", e.type === "overlayadd" ? "1" : "0"); } catch { /* ignore */ }
+  });
+  const refreshRadar = () => {
+    if (map.hasLayer(radar)) radar.setUrl(`${RADAR_URL}?t=${Math.floor(Date.now() / 300000)}`);
+  };
+  setInterval(() => { if (!document.hidden) refreshRadar(); }, 60000);
 
   // ---- legend: what's drawn in the current view, so screenshots explain themselves ----
   const Legend = L.Control.extend({
@@ -164,8 +250,8 @@
     p.set("hours", $("f-hours").value);
     if ($("f-action").value) p.set("action", $("f-action").value);
     if (activeKinds.size) p.set("kind", [...activeKinds].join(","));
-    if ($("f-office").value.trim()) p.set("office", $("f-office").value.trim());
-    if ($("f-event").value.trim()) p.set("event", $("f-event").value.trim());
+    for (const o of officePick.get()) p.append("office", o);
+    for (const e of eventPick.get()) p.append("event", e);
     if ($("f-q").value.trim()) p.set("q", $("f-q").value.trim());
     if ($("f-active").checked) p.set("active", "1");
     if (selected) p.set("id", selected);
@@ -191,7 +277,22 @@
     const run = loading = loadNow(reset);
     try { return await run; } finally { if (loading === run) loading = null; }
   }
+  // A small "Loading" pill over the map while alerts (and any zone outlines) are on their way.
+  // It waits a moment before showing, so the quick minute refreshes don't make it blink.
+  const busy = L.DomUtil.create("div", "busy", map.getContainer());
+  busy.innerHTML = `<span class="spin" aria-hidden="true"></span>Loading alerts…`;
+  busy.setAttribute("role", "status");
+  busy.hidden = true;
+  let busyCount = 0, busyTimer = null;
+  function setBusy(on) {
+    busyCount += on ? 1 : -1;
+    clearTimeout(busyTimer);
+    if (busyCount > 0) busyTimer = setTimeout(() => { busy.hidden = false; }, 250);
+    else busy.hidden = true;
+  }
+
   async function loadNow(reset) {
+    setBusy(true);
     try {
       const q = params().toString();
       const [r] = await Promise.all([getJSON("/api/alerts?" + q), metaReady]);
@@ -203,10 +304,14 @@
         alerts = j.alerts || [];
         total = j.total ?? alerts.length;
         lastQuery = q; lastText = shapesOk ? text : "";
+        loadedOnce = true;
         render();
       }
       $("updated").textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    } catch (e) { if (e.message !== "login") $("count").textContent = "Could not load alerts"; }
+      loadFailed = false;
+    } catch (e) {
+      if (e.message !== "login") { $("count").textContent = "Could not load alerts"; loadFailed = true; renderLegend(); }
+    } finally { setBusy(false); }
   }
 
   // Alerts that only list zones arrive with their zone codes instead of an outline; the outlines
@@ -249,8 +354,8 @@
     try {
       const r = await getJSON("/api/meta");
       meta = { ...meta, ...(await r.json()) };
-      $("dl-offices").innerHTML = (meta.offices || []).map((o) => `<option value="${esc(o)}"${OFFICES[o] ? ` label="${esc(o)} (${esc(OFFICES[o])})"` : ""}>`).join("");
-      $("dl-events").innerHTML = (meta.events || []).map((e) => `<option value="${esc(e)}">`).join("");
+      officePick.setOptions(meta.offices || []);
+      eventPick.setOptions(meta.events || []);
     } catch { /* keep defaults */ }
   }
 
@@ -554,15 +659,23 @@
         rank: emergency ? -1 : (rank[a.kind] ?? 2),
       });
     }
-    if (!rows.size) { el.hidden = true; return; }
-    el.hidden = false;
+    const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: meta.timezone, timeZoneName: "short" });
+    const head = `<div class="legend-head"><span>Legend</span><span class="legend-toggle" aria-hidden="true"></span></div>`;
+    // Nothing drawn here: say why instead of leaving an empty map with no explanation.
+    if (!rows.size) {
+      const why = !loadedOnce ? (loadFailed ? "Could not load alerts." : "Loading alerts…")
+        : !alerts.length ? "No alerts match the filters."
+        : !layers.size ? "None of these alerts have a map shape."
+        : "No alerts in this part of the map.";
+      el.innerHTML = `${head}<div class="legend-body"><div class="legend-empty">${why}</div><div class="legend-note">Stormify · ${esc(now)}</div></div>`;
+      return;
+    }
     const items = [...rows.values()].sort((x, y) => (x.storm ? 0 : 1) - (y.storm ? 0 : 1) || x.rank - y.rank || x.label.localeCompare(y.label));
     const hasStorm = items.some((e) => e.storm);
     const hasZoned = items.some((e) => e.zoned);
-    const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: meta.timezone, timeZoneName: "short" });
     const anyOff = items.some((e) => hiddenKeys.has(e.key));
     const anyOn = items.some((e) => !hiddenKeys.has(e.key));
-    el.innerHTML = `<div class="legend-head"><span>Legend</span><span class="legend-toggle" aria-hidden="true"></span></div>
+    el.innerHTML = `${head}
       <div class="legend-body">
         <div class="legend-all">
           <button type="button" data-all="show"${anyOff ? "" : " disabled"}>Show all</button>
@@ -611,7 +724,10 @@
   let debounce;
   const reload = () => load(true);
   ["f-hours", "f-action", "f-active"].forEach((id) => $(id).addEventListener("change", reload));
-  ["f-office", "f-event", "f-q"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(reload, 350); }));
+  const later = () => { clearTimeout(debounce); debounce = setTimeout(reload, 350); };
+  $("f-q").addEventListener("input", later);
+  // Ticking a few boxes in a row reloads once, after the last one.
+  ["f-office", "f-event"].forEach((id) => $(id).addEventListener("ms-change", later));
 
   // ---- filter bar: collapses to one line, which matters on a phone ----------------
   // Starts collapsed on a phone and open on a wide screen; after that it remembers your choice.
@@ -619,7 +735,7 @@
     const parts = [$("f-hours").selectedOptions[0].text];
     if ($("f-action").value) parts.push($("f-action").selectedOptions[0].text);
     if (activeKinds.size) parts.push([...activeKinds].join(", "));
-    for (const id of ["f-office", "f-event"]) if ($(id).value.trim()) parts.push($(id).value.trim());
+    for (const pick of [officePick, eventPick]) if (pick.get().length) parts.push(pick.get().join(", "));
     if ($("f-q").value.trim()) parts.push(`"${$("f-q").value.trim()}"`);
     if ($("f-active").checked) parts.push("active only");
     $("f-summary").textContent = parts.join(" · ");
@@ -637,6 +753,7 @@
   $("filters-body").addEventListener("change", summarize);
   $("filters-body").addEventListener("input", summarize);
   $("f-kinds").addEventListener("click", summarize);
+  $("filters-body").addEventListener("ms-change", summarize);
   summarize();
   $("list").addEventListener("click", (e) => {
     if (e.target.closest("#more")) { shown += LIST_PAGE; renderList(); return; }
@@ -661,6 +778,7 @@
     toast(r.ok ? "Test notification sent." : (j.error || "Test failed."));
   });
 
+  renderLegend();  // "Loading alerts…" until the first answer
   // Meta and alerts load side by side; alerts wait for meta only before drawing (it sets the time zone).
   const metaReady = loadMeta();
   load();
@@ -668,5 +786,5 @@
   // No point polling the Pi from a tab nobody's looking at; catch up as soon as it's visible again.
   setInterval(() => { if (!document.hidden) load(); }, 60000);
   setInterval(() => { if (!document.hidden) loadHealth(); }, 30000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); loadHealth(); } });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); loadHealth(); refreshRadar(); } });
 })();
