@@ -90,6 +90,27 @@
   }
   const polyGroup = L.featureGroup().addTo(map);
 
+  // ---- radar: NEXRAD base reflectivity mosaic, straight from Iowa State's tile cache ----------
+  // The browser fetches these itself, so the Pi does no work for them. IEM rebuilds the mosaic
+  // every 5 minutes; the tiles are re-asked for on that cadence while the layer is on.
+  const RADAR_URL = "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png";
+  const radar = L.tileLayer(RADAR_URL, {
+    attribution: 'Radar: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>',
+    opacity: 0.6, zIndex: 5, maxZoom: 19, maxNativeZoom: 12,
+  });
+  let radarOn = true;
+  try { radarOn = localStorage.getItem("radar") !== "0"; } catch { /* ignore */ }
+  if (radarOn) radar.addTo(map);
+  L.control.layers(null, { Radar: radar }, { position: "topright", collapsed: false }).addTo(map);
+  map.on("overlayadd overlayremove", (e) => {
+    if (e.layer !== radar) return;
+    try { localStorage.setItem("radar", e.type === "overlayadd" ? "1" : "0"); } catch { /* ignore */ }
+  });
+  const refreshRadar = () => {
+    if (map.hasLayer(radar)) radar.setUrl(`${RADAR_URL}?t=${Math.floor(Date.now() / 300000)}`);
+  };
+  setInterval(() => { if (!document.hidden) refreshRadar(); }, 60000);
+
   // ---- legend: what's drawn in the current view, so screenshots explain themselves ----
   const Legend = L.Control.extend({
     options: { position: "bottomleft" },
@@ -668,5 +689,5 @@
   // No point polling the Pi from a tab nobody's looking at; catch up as soon as it's visible again.
   setInterval(() => { if (!document.hidden) load(); }, 60000);
   setInterval(() => { if (!document.hidden) loadHealth(); }, 30000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); loadHealth(); } });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); loadHealth(); refreshRadar(); } });
 })();

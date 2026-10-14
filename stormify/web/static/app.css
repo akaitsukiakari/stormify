@@ -171,3 +171,12 @@ body.dash { display: flex; flex-direction: column; }
 }
 .legend-all button:disabled { opacity: 0.4; cursor: default; }
 .legend-note { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+/* Map overlays switch (radar). */
+.leaflet-control-layers {
+  background: rgba(18, 22, 29, 0.92); color: var(--text); border: 1px solid var(--line) !important;
+  border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4) !important;
+}
+.leaflet-control-layers-expanded { padding: 4px 10px 4px 6px; font-size: 12px; }
+.leaflet-control-layers-overlays label { display: flex; align-items: center; cursor: pointer; }
+.leaflet-control-layers-selector { margin: 0 6px 0 0; padding: 0; accent-color: var(--accent); }
