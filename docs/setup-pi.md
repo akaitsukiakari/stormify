@@ -31,12 +31,11 @@ The pip install step is slow on a Zero W (several minutes). That's normal.
 
 ## 4. Set up ntfy
 
-See [ntfy.md](ntfy.md), then:
-
 ```bash
-stormify ntfy --user scott --topic stormify-scott --server http://localhost:2586
-stormify test-push --user scott
+sudo ./deploy/install-ntfy.sh --user scott
 ```
+
+This installs the ntfy server on the Pi and points Stormify at it. Follow what it prints to set up the phone app, then run `stormify test-push --user scott`. Details in [ntfy.md](ntfy.md).
 
 ## 5. Start it
 

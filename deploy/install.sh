@@ -67,7 +67,7 @@ else
 ==> Installed. Finish setup:
     1. sudo nano $CONF_DIR/config.toml        (set user_agent)
     2. stormify init --user YOURNAME            (creates your login + example rules)
-    3. stormify ntfy --user YOURNAME --topic YOUR-TOPIC
+    3. sudo ./deploy/install-ntfy.sh --user YOURNAME   (ntfy server for phone alerts)
     4. sudo systemctl start stormify-poller stormify-web
     5. stormify test-push --user YOURNAME
 EOF
