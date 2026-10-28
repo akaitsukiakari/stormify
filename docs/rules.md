@@ -2,7 +2,7 @@
 
 Every alert is archived to the dashboard no matter what. Rules decide which alerts **also push** to your phone.
 
-The easiest way to edit them is the **Rules** page in the dashboard (`/rules`): search offices by code or city, pick several rules and set, add or remove offices on all of them at once, copy one rule's scope onto others, save office groups, and check a draft against the last 48 hours before saving. The **By office** tab shows every rule that covers one office and lets you switch it on or off for each. The JSON below is what that page saves.
+The easiest way to edit them is the **Rules** page in the dashboard (`/rules`): search offices by code or city, pick several rules and set, add or remove offices on all of them at once, copy one rule's scope onto others, save office groups, and check a draft against the last 48 hours before saving. The search box at the top finds offices (by code or city), alert types, tags and risk levels, says what each is and which rules use it, and starts a rule from it. The **By office** tab shows every rule that covers one office and lets you switch it on or off for each. The JSON below is what that page saves.
 
 A rule matches an alert when its **products** and **scope** match. Then:
 
