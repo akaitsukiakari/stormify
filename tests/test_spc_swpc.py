@@ -7,7 +7,7 @@ from stormify.db import Database
 from stormify.engine import Engine, is_significant, snapshot
 from stormify.poller import Poller
 from stormify.rules import load_rules
-from stormify.sources.spc import SPCSource, parse_md, parse_outlook
+from stormify.sources.spc import SPCSource, parse_extra_outlook, parse_md, parse_outlook
 from stormify.sources.swpc import SWPCSource, parse_message
 
 
@@ -186,6 +186,85 @@ def test_spc_source_skips_known():
                     known_ids=lambda ids: set(ids))
     assert src.poll() == []
     assert not any(c.endswith("/products/abc-123") for c in sess.calls)
+
+
+def prob_fc(labels=("0.05", "0.15", "0.30", "SIGN"), issue="202610091250", fill=True):
+    feats = []
+    for i, lab in enumerate(labels):
+        props = {"VALID": "202610091300", "EXPIRE": "202610101200", "ISSUE": issue, "LABEL": lab}
+        if fill:
+            props["fill"] = "#abcdef"
+        feats.append({"type": "Feature", "geometry": square(-106 + i * 0.2, 39 + i * 0.2, 3 - i * 0.5),
+                      "properties": props})
+    return {"type": "FeatureCollection", "features": feats}
+
+
+def test_outlook_lists_offices_it_covers():
+    # The enhanced square runs from 97W to 96W around 36.5N, so the low-end areas cover Norman (OUN).
+    a = parse_outlook(outlook_fc(), 1)
+    assert "OUN" in a.attn_offices and "BOU" not in a.attn_offices
+    assert load_rules([{"name": "Norman outlooks", "kinds": ["Outlook"], "scope": {"offices": ["OUN"]}}])[0].matches_scope(a)
+
+
+def test_hail_outlook_parse():
+    a = parse_extra_outlook(prob_fc(), "day1hail", "Day 1 Hail Outlook", "hail", "/products/outlook/day1otlk.html")
+    assert a.id == "spc:day1hail:202610091250" and a.kind == "Outlook" and a.office == "SPC"
+    assert a.headline == "Day 1: 30% hail · significant"
+    assert set(a.tags) == {"hail-30", "significant"}
+    assert a.params["risk_labels"] == ["0.05", "0.15", "0.30", "SIGN"] and a.params["level"] == 30
+    assert a.params["risk_names"][-1] == "Significant hail" and a.params["risk_colors"][-1] == "#000000"
+    assert a.params["risk_colors"][0] == "#abcdef"
+    assert a.thread_key == "spc:day1hail:20261010"
+    assert "BOU" in a.attn_offices  # the 5% square covers Boulder
+    assert a.url.endswith("/products/outlook/day1otlk.html")
+
+
+def test_prob_outlook_without_fill_uses_spc_colors_and_percent_labels():
+    a = parse_extra_outlook(prob_fc(("15", "30"), fill=False), "day4prob", "Day 4 Severe Outlook", "prob")
+    assert a.headline == "Day 4: 30% severe" and a.tags == ["severe-30"]
+    assert a.params["risk_colors"] == ["#ffc800", "#ff0000"] and a.params["day"] == 4
+
+
+def test_fire_outlook_parse():
+    a = parse_extra_outlook(prob_fc(("ELEV", "CRIT")), "day1fw", "Day 1 Fire Weather Outlook", "fire")
+    assert a.headline == "Day 1: critical fire weather" and a.tags == ["fire-critical"]
+    assert a.params["risk_names"] == ["Elevated", "Critical"] and a.params["level"] == 1
+    d = parse_extra_outlook(prob_fc(("IDRT",)), "day2dryt", "Day 2 Dry Thunderstorm Outlook", "dryt")
+    assert d.headline == "Day 2: isolated dry thunderstorms" and d.tags == ["dry-thunder"]
+
+
+def test_empty_extra_outlook_is_skipped():
+    fc = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": None, "properties": {
+        "VALID": "202610091300", "EXPIRE": "202610101200", "ISSUE": "202610091250", "LABEL": ""}}]}
+    assert parse_extra_outlook(fc, "day1torn", "Day 1 Tornado Outlook", "torn") is None
+
+
+def test_hail_upgrade_is_significant():
+    low = parse_extra_outlook(prob_fc(("0.05", "0.15")), "day1hail", "Day 1 Hail Outlook", "hail")
+    high = parse_extra_outlook(prob_fc(("0.05", "0.15", "0.30"), issue="202610091630"), "day1hail",
+                               "Day 1 Hail Outlook", "hail")
+    assert low.thread_key == high.thread_key and is_significant(snapshot(low), high)
+
+
+def test_spc_source_polls_extra_outlooks_and_skips_missing_ones():
+    routes = {"day1otlk_hail.lyr.geojson": FakeResp(prob_fc(), headers={"ETag": "h"})}
+    sess = FakeSession(routes)
+    src = SPCSource("https://spc", "https://nws", "ua", days=(), mds=False, session=sess)
+    alerts = src.poll()
+    assert [a.event for a in alerts] == ["Day 1 Hail Outlook"]
+    missing = [c for c in sess.calls if "day1otlk_hail" not in c]
+    assert missing  # every other layer was tried once and 404'd
+    sess.calls.clear()
+    src._last_outlooks = 0
+    src.poll()
+    # 404'd layers wait an hour; the hail layer is asked again with its ETag.
+    assert all("day1otlk_hail" in c for c in sess.calls)
+
+
+def test_spc_source_extra_outlooks_off():
+    sess = FakeSession({})
+    src = SPCSource("https://spc", "https://nws", "ua", days=(), mds=False, extra_outlooks=False, session=sess)
+    assert src.poll() == [] and sess.calls == []
 
 
 # ---- SWPC -----------------------------------------------------------------

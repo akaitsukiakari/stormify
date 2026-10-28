@@ -1,9 +1,15 @@
-"""Storm Prediction Center products: convective outlooks and mesoscale discussions.
+"""Storm Prediction Center products: outlooks and mesoscale discussions.
 
-Outlooks come from SPC's categorical outlook GeoJSON (one small file per day,
-fetched with conditional requests), so each issuance carries its risk areas for
-the map. The narrative text is the matching SWODY1/2/3 product from
-api.weather.gov, attached when its issuance time lines up.
+Outlooks come from SPC's outlook GeoJSON (one small file per outlook, fetched
+with conditional requests), so each issuance carries its areas for the map:
+the Day 1-3 categorical outlooks, the Day 1-2 tornado, hail and wind
+probabilities, the Day 3 and Day 4-8 severe probabilities, and the Day 1-2 fire
+weather and dry thunderstorm outlooks. The categorical outlooks also get their
+narrative text, the matching SWODY1/2/3 product from api.weather.gov, attached
+when its issuance time lines up.
+
+Each outlook lists the forecast offices whose home city falls inside any of its
+areas, so a rule scoped to an office (say BOU) matches the outlooks that cover it.
 
 Mesoscale discussions are SWOMCD products from api.weather.gov. Their text ends
 with a LAT...LON polygon and an ATTN...WFO list, which become the map shape and
@@ -24,6 +30,7 @@ from typing import Callable
 import requests
 
 from ..models import Alert
+from ..offices import offices_covered
 from .base import Source
 
 log = logging.getLogger(__name__)
@@ -37,6 +44,32 @@ RISK_NAMES = {"TSTM": "Thunderstorms", "MRGL": "Marginal", "SLGT": "Slight", "EN
               "MDT": "Moderate", "HIGH": "High"}
 RISK_SEVERITY = {"TSTM": "Minor", "MRGL": "Minor", "SLGT": "Moderate", "ENH": "Moderate",
                  "MDT": "Severe", "HIGH": "Extreme"}
+
+# The other outlooks: (slug, path under the SPC site, event, hazard, page for the link).
+# A layer SPC doesn't publish (404) is skipped quietly and retried hourly.
+EXTRA_OUTLOOKS = (
+    [(f"day{d}{h}", f"/products/outlook/day{d}otlk_{h}.lyr.geojson", f"Day {d} {name} Outlook", h,
+      f"/products/outlook/day{d}otlk.html")
+     for d in (1, 2) for h, name in (("torn", "Tornado"), ("hail", "Hail"), ("wind", "Wind"))]
+    + [("day3prob", "/products/outlook/day3otlk_prob.lyr.geojson", "Day 3 Severe Outlook", "prob",
+        "/products/outlook/day3otlk.html")]
+    + [(f"day{d}prob", f"/products/exper/day4-8/day{d}prob.lyr.geojson", f"Day {d} Severe Outlook", "prob",
+        "/products/exper/day4-8/") for d in range(4, 9)]
+    + [(f"day{d}fw", f"/products/fire_wx/day{d}fw_windrh.lyr.geojson", f"Day {d} Fire Weather Outlook", "fire",
+        f"/products/fire_wx/fwdy{d}.html") for d in (1, 2)]
+    + [(f"day{d}dryt", f"/products/fire_wx/day{d}fw_dryt.lyr.geojson", f"Day {d} Dry Thunderstorm Outlook", "dryt",
+        f"/products/fire_wx/fwdy{d}.html") for d in (1, 2)]
+)
+HAZARD_WORDS = {"torn": "tornado", "hail": "hail", "wind": "wind", "prob": "severe"}
+FIRE_LEVELS = {"fire": ["ELEV", "CRIT", "EXTM"], "dryt": ["IDRT", "SDRT"]}
+FIRE_NAMES = {"ELEV": "Elevated", "CRIT": "Critical", "EXTM": "Extremely critical",
+              "IDRT": "Isolated dry thunderstorms", "SDRT": "Scattered dry thunderstorms"}
+FIRE_TAGS = {"ELEV": "fire-elevated", "CRIT": "fire-critical", "EXTM": "fire-extreme",
+             "IDRT": "dry-thunder", "SDRT": "dry-thunder-scattered"}
+# SPC's usual colors, for files that don't carry their own fill color.
+PROB_COLORS = {2: "#008b00", 5: "#8b4726", 10: "#ffc800", 15: "#ffc800", 30: "#ff0000", 45: "#ff00ff",
+               60: "#912cee", 75: "#104e8b", 90: "#104e8b"}
+FIRE_COLORS = {"ELEV": "#ffa500", "CRIT": "#ff0000", "EXTM": "#ff00ff", "IDRT": "#b47e45", "SDRT": "#ff0000"}
 
 MD_NUM_RE = re.compile(r"Mesoscale Discussion (\d+)", re.I)
 MD_AREAS_RE = re.compile(r"^Areas affected\.\.\.(.+?)\s*$", re.M | re.I)
@@ -125,10 +158,105 @@ def parse_outlook(data: dict, day: int, text: str = "") -> Alert | None:
         thread_key=f"spc:day{day}:{(expire or issue).strftime('%Y%m%d')}",
         tags=tags,
         kind="Outlook",
+        attn_offices=offices_covered(geometry),
         event_tz="America/Chicago",
         url=f"{SPC_URL}/products/outlook/day{day}otlk.html",
         geometry=geometry,
         params=params,
+    )
+
+
+def _pct(label: str) -> int | None:
+    """'0.05' or '5' -> 5; anything else (SIGN, CIG1, ...) -> None."""
+    try:
+        v = float(label)
+    except (TypeError, ValueError):
+        return None
+    return round(v * 100) if v < 1 else round(v)
+
+
+def parse_extra_outlook(data: dict, slug: str, event: str, hazard: str, page: str = "") -> Alert | None:
+    """A probabilistic or fire weather outlook FeatureCollection -> one Alert, or None if it has no areas."""
+    feats = [f for f in data.get("features") or []
+             if f.get("geometry") and str((f.get("properties") or {}).get("LABEL") or "").strip()]
+    p0 = (data.get("features") or [{}])[0].get("properties") or {}
+    issue = _parse_stamp(_prop(p0, "ISSUE_ISO", "ISSUE"))
+    valid = _parse_stamp(_prop(p0, "VALID_ISO", "VALID"))
+    expire = _parse_stamp(_prop(p0, "EXPIRE_ISO", "EXPIRE"))
+    if not issue or not feats:
+        return None
+    day = int(re.match(r"day(\d)", slug).group(1))
+    fire = FIRE_LEVELS.get(hazard)
+
+    def rank(f):
+        lab = str(f["properties"]["LABEL"]).strip().upper()
+        if fire:
+            return fire.index(lab) if lab in fire else -1
+        pct = _pct(lab)
+        return pct if pct is not None else 1000  # hatched "significant" areas draw on top
+
+    feats.sort(key=rank)
+    labels = [str(f["properties"]["LABEL"]).strip().upper() for f in feats]
+    tags: list[str] = []
+    names: list[str] = []
+    colors: list[str] = []
+    for f, lab in zip(feats, labels):
+        props = f["properties"]
+        pct = None if fire else _pct(lab)
+        if fire:
+            names.append(FIRE_NAMES.get(lab, props.get("LABEL2") or lab))
+            colors.append(props.get("fill") or FIRE_COLORS.get(lab, ""))
+        elif pct is not None:
+            names.append(f"{pct}% {HAZARD_WORDS[hazard]}")
+            colors.append(props.get("fill") or PROB_COLORS.get(pct, ""))
+        else:
+            names.append(f"Significant {HAZARD_WORDS[hazard]}")
+            colors.append("#000000")
+    if fire:
+        top = max(labels, key=lambda lab: fire.index(lab) if lab in fire else -1)
+        level = fire.index(top) if top in fire else -1
+        if top in FIRE_TAGS:
+            tags.append(FIRE_TAGS[top])
+        headline = f"Day {day}: {FIRE_NAMES.get(top, top).lower()} fire weather" if hazard == "fire" \
+            else f"Day {day}: {FIRE_NAMES.get(top, top).lower()}"
+    else:
+        pcts = [p for p in (_pct(lab) for lab in labels) if p is not None]
+        level = max(pcts) if pcts else 0
+        word = HAZARD_WORDS[hazard]
+        if pcts:
+            tags.append(f"{word}-{level}")
+        sig = any(_pct(lab) is None for lab in labels)
+        if sig:
+            tags.append("significant")
+        headline = f"Day {day}: {level}% {word}" + (" · significant" if sig else "")
+    geometry = {"type": "GeometryCollection", "geometries": [f["geometry"] for f in feats]}
+    severity = "Minor"
+    if (fire and level >= 1) or (not fire and level >= 15):
+        severity = "Moderate"
+    if (fire and level >= 2 and hazard == "fire") or (not fire and level >= 30):
+        severity = "Severe"
+    return Alert(
+        id=f"spc:{slug}:{issue.strftime('%Y%m%d%H%M')}",
+        source="spc",
+        event=event,
+        headline=headline,
+        description="",
+        area_desc="",
+        office="SPC",
+        attn_offices=offices_covered(geometry),
+        sender_name="NWS Storm Prediction Center",
+        severity=severity,
+        sent=_ts(issue),
+        effective=_ts(valid or issue),
+        expires=_ts(expire) if expire else "",
+        thread_key=f"spc:{slug}:{(expire or issue).strftime('%Y%m%d')}",
+        tags=tags,
+        kind="Outlook",
+        event_tz="America/Chicago",
+        url=f"{SPC_URL}{page}" if page else SPC_URL,
+        geometry=geometry,
+        params={"risk": labels[-1], "risk_labels": labels, "risk_names": names, "risk_colors": colors,
+                "level": level, "day": day, "hazard": hazard, "forecaster": _prop(p0, "FORECASTER")},
     )
 
 
@@ -248,19 +376,21 @@ class SPCSource(Source):
     name = "spc"
 
     def __init__(self, spc_url: str, nws_url: str, user_agent: str, days: tuple[int, ...] = OUTLOOK_DAYS,
-                 mds: bool = True, outlook_interval: int = 300,
+                 mds: bool = True, outlook_interval: int = 300, extra_outlooks: bool = True,
                  known_ids: Callable[[list[str]], set[str]] | None = None,
                  session: requests.Session | None = None, timeout: float = 30.0):
         self.spc_url = spc_url.rstrip("/")
         self.nws_url = nws_url.rstrip("/")
         self.days = tuple(days)
         self.mds = mds
+        self.extra = EXTRA_OUTLOOKS if extra_outlooks else ()
+        self._missing: dict[str, float] = {}  # slug -> when SPC last said 404
         self.outlook_interval = outlook_interval
         self.known_ids = known_ids or (lambda ids: set())
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
         self.timeout = timeout
-        self._validators: dict[int, dict[str, str]] = {}
+        self._validators: dict = {}
         self._last_outlooks = 0.0
 
     def _nws_json(self, path: str) -> dict:
@@ -321,6 +451,40 @@ class SPCSource(Source):
             out.append(parse_outlook(data, day, text) or a)
         return out
 
+    def _poll_extra(self, errors: list[str]) -> list[Alert]:
+        out: list[Alert] = []
+        now = time.monotonic()
+        for slug, path, event, hazard, page in self.extra:
+            if slug in self._missing and now - self._missing[slug] < 3600:
+                continue
+            headers = {}
+            v = self._validators.get(slug, {})
+            if v.get("etag"):
+                headers["If-None-Match"] = v["etag"]
+            if v.get("modified"):
+                headers["If-Modified-Since"] = v["modified"]
+            try:
+                resp = self.session.get(f"{self.spc_url}{path}", headers=headers, timeout=self.timeout)
+                if resp.status_code == 304:
+                    continue
+                if resp.status_code == 404:
+                    if slug not in self._missing:
+                        log.info("SPC doesn't publish %s; skipping it for now", path)
+                    self._missing[slug] = now
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+            except (requests.RequestException, ValueError) as e:
+                errors.append(f"{event}: {e}")
+                continue
+            self._missing.pop(slug, None)
+            self._validators[slug] = {k: resp.headers.get(h, "") for k, h in
+                                      (("etag", "ETag"), ("modified", "Last-Modified"))}
+            a = parse_extra_outlook(data, slug, event, hazard, page)
+            if a and not self.known_ids([a.id]):
+                out.append(a)
+        return out
+
     def _poll_mds(self, errors: list[str]) -> list[Alert]:
         try:
             graph = self._nws_json("/products/types/SWO/locations/MCD").get("@graph") or []
@@ -347,9 +511,11 @@ class SPCSource(Source):
         errors: list[str] = []
         alerts: list[Alert] = []
         tried = 0
-        if self.days and (not self._last_outlooks or time.monotonic() - self._last_outlooks >= self.outlook_interval):
-            tried += len(self.days)
+        if (self.days or self.extra) and (not self._last_outlooks
+                                          or time.monotonic() - self._last_outlooks >= self.outlook_interval):
+            tried += len(self.days) + len(self.extra)
             alerts.extend(self._poll_outlooks(errors))
+            alerts.extend(self._poll_extra(errors))
             self._last_outlooks = time.monotonic()
         if self.mds:
             tried += 1

@@ -30,6 +30,8 @@ class Config:
     spc_enabled: bool = True
     spc_outlook_days: list = field(default_factory=lambda: [1, 2, 3])
     spc_mds: bool = True
+    # Tornado/hail/wind probabilities, Day 3 and 4-8 severe, Day 1-2 fire weather and dry thunderstorms.
+    spc_extra_outlooks: bool = True
     spc_base_url: str = "https://www.spc.noaa.gov"
     # Space Weather Prediction Center watches, warnings, alerts and summaries.
     swpc_enabled: bool = True

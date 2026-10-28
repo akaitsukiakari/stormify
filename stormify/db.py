@@ -288,7 +288,7 @@ class Database:
     # The only raw parameters the dashboard reads (an NHC storm's name, where a shape came from, an SPC
     # outlook's risk areas). NWS parameters carry long reference lists that used to be most of the
     # payload, so lite rows keep just these.
-    LITE_PARAMS = ("storm", "geometry_source", "risk_labels", "day")
+    LITE_PARAMS = ("storm", "geometry_source", "risk_labels", "risk_names", "risk_colors", "day")
 
     def lite_dict(self, d: dict) -> dict:
         """Python version of the lite trim, for a row that didn't come through query_feed_json."""

@@ -25,6 +25,10 @@
     "Tropical Cyclone Public Advisory", "Tropical Cyclone Update", "Tropical Cyclone Forecast Advisory",
     "Tropical Cyclone Discussion", "Tropical Weather Outlook",
     "Day 1 Convective Outlook", "Day 2 Convective Outlook", "Day 3 Convective Outlook", "Mesoscale Discussion",
+    "Day 1 Tornado Outlook", "Day 1 Hail Outlook", "Day 1 Wind Outlook", "Day 2 Tornado Outlook", "Day 2 Hail Outlook",
+    "Day 2 Wind Outlook", "Day 3 Severe Outlook", "Day 4 Severe Outlook", "Day 5 Severe Outlook", "Day 6 Severe Outlook",
+    "Day 7 Severe Outlook", "Day 8 Severe Outlook", "Day 1 Fire Weather Outlook", "Day 2 Fire Weather Outlook",
+    "Day 1 Dry Thunderstorm Outlook", "Day 2 Dry Thunderstorm Outlook",
     "Geomagnetic Storm Watch", "Geomagnetic Storm Warning", "Geomagnetic Storm Alert", "Geomagnetic Warning",
     "Solar Radiation Storm Warning", "Solar Radiation Storm Alert", "Radio Blackout Alert", "Radio Blackout Summary",
     "Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report",
@@ -34,6 +38,12 @@
     ["destructive", "Destructive thunderstorm"], ["observed", "Observed / confirmed"], ["tornado-possible", "Tornado possible"],
     ["risk-mrgl", "SPC Marginal risk"], ["risk-slgt", "SPC Slight risk"], ["risk-enh", "SPC Enhanced risk"],
     ["risk-mdt", "SPC Moderate risk"], ["risk-high", "SPC High risk"],
+    ["tornado-10", "SPC 10% tornado"], ["tornado-15", "SPC 15% tornado"], ["tornado-30", "SPC 30% tornado"],
+    ["hail-30", "SPC 30% hail"], ["hail-45", "SPC 45% hail"], ["wind-30", "SPC 30% wind"], ["wind-45", "SPC 45% wind"],
+    ["severe-15", "SPC 15% severe (Day 3-8)"], ["severe-30", "SPC 30% severe (Day 3-8)"],
+    ["significant", "SPC hatched: significant severe"], ["fire-elevated", "SPC elevated fire weather"],
+    ["fire-critical", "SPC critical fire weather"], ["fire-extreme", "SPC extremely critical fire weather"],
+    ["dry-thunder", "SPC isolated dry thunderstorms"], ["dry-thunder-scattered", "SPC scattered dry thunderstorms"],
     ["watch-likely", "MD: watch likely"], ["watch-possible", "MD: watch possible"], ["tornado-watch", "MD: about a tornado watch"],
     ["svr-watch", "MD: about a severe thunderstorm watch"], ["winter", "MD: winter weather"], ["heavy-rain", "MD: heavy rain"],
     ["geomagnetic", "Space weather: geomagnetic"], ["radiation", "Space weather: radiation"], ["radio", "Space weather: radio blackout"],
@@ -56,6 +66,41 @@
   let dirty = false;
   let uidSeq = 0;
   const withUid = (r) => Object.assign(r, { _uid: ++uidSeq });
+
+  // What each box does, shown from the "?" next to it (hover, or tap on a phone).
+  const TIPS = {
+    act: "Push to my phone sends an ntfy notification. Dashboard only keeps matching alerts off your phone; they still show on the dashboard.",
+    priority: "How loud the notification is. 5 can break through Do Not Disturb if you allow it in the ntfy app. Emergencies always go out at 5.",
+    on_update: "Warnings get updated (extended, expanded, cancelled). New alerts only: one push per alert. Significant: also when it gets worse (bigger hail, a PDS or emergency tag, a higher SPC risk). Every update: each new version.",
+    on_cancel: "Send a short CANCELLED note when something you were pushed is cancelled early.",
+    events: "Exact product names, like Tornado Warning or Day 1 Hail Outlook. Start typing to pick one. Leave empty to match any event.",
+    kinds: "Broad groups instead of exact names. Warning includes emergencies. Outlook covers all SPC outlooks, Product covers text products like AFD, HWO and PNS. Pick none to match any kind.",
+    tags_any: "Extra labels Stormify adds, like pds, emergency, risk-mdt or hail-30. The alert needs at least one of these. Leave empty to ignore tags.",
+    nationwide: "Match alerts anywhere in the country. Turn this off to limit the rule to the offices, states or zones below.",
+    offices: "NWS forecast offices, like BOU for Denver/Boulder. An SPC outlook counts for an office when one of its areas covers that office's city, and a mesoscale discussion when it names the office.",
+    groups: "Saved office lists from the Office groups tab. The rule follows the group, so editing the group changes every rule that uses it.",
+    states: "Two-letter states. Matches alerts whose zones are in that state.",
+    zones: "NWS zone or county codes for a smaller area than an office. Find them on the alert's details in the dashboard.",
+    same: "Six-digit county codes used by weather radios (008005 is Arapahoe County, CO).",
+    include_any: "Push only if the text contains at least one of these lines, like PDS or particularly dangerous situation. Not case sensitive unless you tick the box.",
+    include_all: "Push only if the text contains every one of these lines.",
+    exclude_any: "Don't push if the text contains any of these, like nickel size.",
+    include_regex: "Advanced: a regular expression that has to match.",
+    exclude_regex: "Advanced: don't push if this regular expression matches.",
+    thresholds: "Only push warnings that list at least this hail size or wind gust. Leave empty to ignore.",
+    templates: "Change what the notification says. Put the important part first; Android cuts off long notifications.",
+  };
+  const tip = (k) => `<span class="tip" tabindex="0" role="note" aria-label="${esc(TIPS[k])}" data-tip="${esc(TIPS[k])}">?</span>`;
+  // Recipes from the guide: a new rule filled in, ready to adjust.
+  const STARTERS = {
+    "office-all": { name: "Everything from …", scope: { offices: [] }, priority: 3, on_update: "any", on_cancel: true },
+    "office-ww": { name: "Watches and warnings, …", kinds: ["Watch", "Warning"], scope: { offices: [] }, priority: 4, on_cancel: true },
+    pds: { name: "PDS anywhere", scope: { nationwide: true }, priority: 5,
+      filters: { include_any: ["particularly dangerous situation"] } },
+    "spc-big": { name: "SPC Moderate or High risk", kinds: ["Outlook"], tags_any: ["risk-mdt", "risk-high"],
+      scope: { nationwide: true }, priority: 4 },
+    quiet: { name: "Keep off my phone: …", action: "log", scope: { offices: [] } },
+  };
 
   // ---- helpers --------------------------------------------------------------------
   const officeLabel = (c) => OFFICES[c] ? `${c} · ${OFFICES[c]}` : c;
@@ -272,53 +317,53 @@
     el.innerHTML = `
       <div class="grid">
         <label class="wide">Name<input data-k="name" value="${esc(r.name || "")}"></label>
-        <fieldset><legend>When it matches</legend>
+        <fieldset><legend>When it matches ${tip("act")}</legend>
           <label class="radio"><input type="radio" name="act" value="push" ${r.action !== "log" ? "checked" : ""}> Push to my phone</label>
           <label class="radio"><input type="radio" name="act" value="log" ${r.action === "log" ? "checked" : ""}> Dashboard only</label>
-          <label>Loudness<select data-k="priority">${Object.entries(PRIORITY).map(([v, l]) => `<option value="${v}" ${+v === +(r.priority || 3) ? "selected" : ""}>${l}</option>`).reverse().join("")}</select></label>
+          <label><span>Loudness ${tip("priority")}</span><select data-k="priority">${Object.entries(PRIORITY).map(([v, l]) => `<option value="${v}" ${+v === +(r.priority || 3) ? "selected" : ""}>${l}</option>`).reverse().join("")}</select></label>
         </fieldset>
         <fieldset><legend>Updates and cancellations</legend>
-          <label>On updates<select data-k="on_update">${Object.entries(ON_UPDATE).map(([v, l]) => `<option value="${v}" ${v === (r.on_update || "significant") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-          <label class="check"><input type="checkbox" data-k="on_cancel" ${r.on_cancel ? "checked" : ""}> Tell me when it's cancelled</label>
+          <label><span>On updates ${tip("on_update")}</span><select data-k="on_update">${Object.entries(ON_UPDATE).map(([v, l]) => `<option value="${v}" ${v === (r.on_update || "significant") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+          <label class="check"><input type="checkbox" data-k="on_cancel" ${r.on_cancel ? "checked" : ""}> Tell me when it's cancelled ${tip("on_cancel")}</label>
         </fieldset>
 
         <fieldset class="wide"><legend>Which products</legend>
-          <label>Event names <span class="muted small">(empty = any)</span><div data-chip="events"></div></label>
-          <div class="kinds">Or any of these kinds:
+          <label><span>Event names <span class="muted small">(empty = any)</span> ${tip("events")}</span><div data-chip="events"></div></label>
+          <div class="kinds">Or any of these kinds ${tip("kinds")}
             ${KINDS.map((k) => `<button type="button" class="chip ${(r.kinds || []).includes(k) ? "on" : ""}" data-kind="${k}">${k}</button>`).join("")}
           </div>
-          <label>Only if tagged with any of <div data-chip="tags_any"></div></label>
+          <label><span>Only if tagged with any of ${tip("tags_any")}</span><div data-chip="tags_any"></div></label>
         </fieldset>
 
         <fieldset class="wide"><legend>Where</legend>
-          <label class="check"><input type="checkbox" data-scope="nationwide" ${s.nationwide ? "checked" : ""}> Nationwide</label>
+          <label class="check"><input type="checkbox" data-scope="nationwide" ${s.nationwide ? "checked" : ""}> Nationwide ${tip("nationwide")}</label>
           <div class="where ${s.nationwide ? "dim" : ""}">
-            <label>Offices <span class="muted small">(type a code or a city)</span><div data-chip="offices"></div></label>
-            ${Object.keys(groups).length ? `<div class="groups-pick">Office groups: ${Object.keys(groups).sort().map((g) => `<label class="check"><input type="checkbox" data-group="${esc(g)}" ${(s.groups || []).includes(g) ? "checked" : ""}> ${esc(g)} <span class="muted small">(${groups[g].length})</span></label>`).join("")}</div>` : ""}
-            <label>States <span class="muted small">(two letters)</span><div data-chip="states"></div></label>
+            <label><span>Offices <span class="muted small">(type a code or a city)</span> ${tip("offices")}</span><div data-chip="offices"></div></label>
+            ${Object.keys(groups).length ? `<div class="groups-pick">Office groups ${tip("groups")} ${Object.keys(groups).sort().map((g) => `<label class="check"><input type="checkbox" data-group="${esc(g)}" ${(s.groups || []).includes(g) ? "checked" : ""}> ${esc(g)} <span class="muted small">(${groups[g].length})</span></label>`).join("")}</div>` : ""}
+            <label><span>States <span class="muted small">(two letters)</span> ${tip("states")}</span><div data-chip="states"></div></label>
             <details ${(s.zones || []).length || (s.same || []).length ? "open" : ""}><summary class="muted">Zones and county codes</summary>
-              <label>UGC zones <span class="muted small">(COZ039, KSC173)</span><div data-chip="zones"></div></label>
-              <label>SAME / FIPS county codes <span class="muted small">(008005)</span><div data-chip="same"></div></label>
+              <label><span>UGC zones <span class="muted small">(COZ039, KSC173)</span> ${tip("zones")}</span><div data-chip="zones"></div></label>
+              <label><span>SAME / FIPS county codes <span class="muted small">(008005)</span> ${tip("same")}</span><div data-chip="same"></div></label>
             </details>
           </div>
         </fieldset>
 
         <fieldset class="wide"><legend>Text filters <span class="muted small">(one per line; a rule that fails these logs instead of pushing)</span></legend>
           <div class="grid3">
-            <label>Contains any of<textarea data-f="include_any" rows="3">${lines("include_any")}</textarea></label>
-            <label>Contains all of<textarea data-f="include_all" rows="3">${lines("include_all")}</textarea></label>
-            <label>Skip if it contains<textarea data-f="exclude_any" rows="3">${lines("exclude_any")}</textarea></label>
-            <label>Matches a regex<textarea data-f="include_regex" rows="2" spellcheck="false">${lines("include_regex")}</textarea></label>
-            <label>Skip if a regex matches<textarea data-f="exclude_regex" rows="2" spellcheck="false">${lines("exclude_regex")}</textarea></label>
+            <label><span>Contains any of ${tip("include_any")}</span><textarea data-f="include_any" rows="3">${lines("include_any")}</textarea></label>
+            <label><span>Contains all of ${tip("include_all")}</span><textarea data-f="include_all" rows="3">${lines("include_all")}</textarea></label>
+            <label><span>Skip if it contains ${tip("exclude_any")}</span><textarea data-f="exclude_any" rows="3">${lines("exclude_any")}</textarea></label>
+            <label><span>Matches a regex ${tip("include_regex")}</span><textarea data-f="include_regex" rows="2" spellcheck="false">${lines("include_regex")}</textarea></label>
+            <label><span>Skip if a regex matches ${tip("exclude_regex")}</span><textarea data-f="exclude_regex" rows="2" spellcheck="false">${lines("exclude_regex")}</textarea></label>
             <div>
               <label class="check"><input type="checkbox" data-f="case_sensitive" ${f.case_sensitive ? "checked" : ""}> Case sensitive</label>
-              <label>Hail at least (in)<input type="number" step="0.25" min="0" data-k="min_hail_in" value="${r.min_hail_in ?? ""}"></label>
+              <label><span>Hail at least (in) ${tip("thresholds")}</span><input type="number" step="0.25" min="0" data-k="min_hail_in" value="${r.min_hail_in ?? ""}"></label>
               <label>Wind at least (mph)<input type="number" step="5" min="0" data-k="min_wind_mph" value="${r.min_wind_mph ?? ""}"></label>
             </div>
           </div>
         </fieldset>
 
-        <details class="wide"><summary class="muted">Notification text</summary>
+        <details class="wide"><summary class="muted">Notification text ${tip("templates")}</summary>
           <p class="muted small">Leave empty for the default. Variables like {event}, {office}, {tags_prefix}, {hail_short}, {area_short}, {expires}. See docs/rules.md for the full list.</p>
           <label>Title<input data-k="title_template" value="${esc(r.title_template || "")}" placeholder="{status_prefix}{tags_prefix}{event} · {office}" spellcheck="false"></label>
           <label>Body<textarea data-k="body_template" rows="2" placeholder="{threat}{area_short}&#10;Until {expires}" spellcheck="false">${esc(r.body_template || "")}</textarea></label>
@@ -465,14 +510,24 @@
   });
   $("rule-list").addEventListener("dragend", () => { dragUid = null; document.querySelectorAll(".rule.drop, .rule.dragging").forEach((x) => x.classList.remove("drop", "dragging")); });
 
-  $("add-rule").addEventListener("click", () => {
-    const r = withUid({ name: "New rule", enabled: true, events: [], kinds: [], scope: { offices: [] }, action: "push", priority: 3, on_update: "significant" });
+  function addRule(extra = {}) {
+    const r = withUid({ name: "New rule", enabled: true, events: [], kinds: [], scope: { offices: [] }, action: "push", priority: 3, on_update: "significant", ...clone(extra) });
     rules.unshift(r);
     openUid = r._uid;
     setDirty();
     renderRules();
     document.querySelector("#editor [data-k=name]")?.select();
-  });
+  }
+  $("add-rule").addEventListener("click", () => addRule());
+  document.querySelectorAll("[data-starter]").forEach((b) => b.addEventListener("click", () => {
+    addRule(STARTERS[b.dataset.starter]);
+    toast("Added at the top. Fill in the offices and name, then Save.");
+  }));
+  // A "?" inside a label shouldn't tick the checkbox or focus the box next to it.
+  document.addEventListener("click", (e) => { if (e.target.classList?.contains("tip")) e.preventDefault(); });
+  const guide = $("guide");
+  try { if (localStorage.getItem("rulesGuide") === "closed") guide.open = false; } catch { /* ignore */ }
+  guide.addEventListener("toggle", () => { try { localStorage.setItem("rulesGuide", guide.open ? "open" : "closed"); } catch { /* ignore */ } });
 
   // ---- bulk actions ---------------------------------------------------------------------------
   const picked = () => rules.filter((r) => selected.has(r._uid));

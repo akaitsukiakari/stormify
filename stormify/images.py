@@ -62,6 +62,8 @@ def color_for(a: Alert) -> str:
         return "#ff2e63"
     if a.source == "spc" and a.kind == "Outlook" and a.params.get("risk") in RISK_COLORS:
         return RISK_COLORS[a.params["risk"]]
+    if a.source == "spc" and a.kind == "Outlook" and (a.params.get("risk_colors") or [""])[-1] not in ("", "#000000"):
+        return a.params["risk_colors"][-1]
     return EVENT_COLORS.get(a.event) or KIND_COLORS.get(a.kind) or "#8b94a5"
 
 
@@ -219,8 +221,10 @@ class Renderer:
         color = color_for(a)
         if a.source == "spc" and a.kind == "Outlook":
             labels = a.params.get("risk_labels") or []
+            colors = a.params.get("risk_colors") or []
             for i, g in enumerate((geom.get("geometries") or [])):
-                draw(g, RISK_COLORS.get(labels[i] if i < len(labels) else "", color), 90, 2)
+                c = (colors[i] if i < len(colors) else "") or RISK_COLORS.get(labels[i] if i < len(labels) else "", color)
+                draw(g, "#e8e8e8" if c == "#000000" else c, 0 if c == "#000000" else 90, 2)
         elif geom.get("type") == "GeometryCollection":
             for g in geom.get("geometries") or []:
                 draw(g, color, 70, 3)
