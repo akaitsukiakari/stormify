@@ -56,6 +56,27 @@
     <button class="primary" id="office-bar-ok">Apply</button>
     <button id="office-bar-cancel">Cancel</button>
   </div>
+  <details class="guide" id="guide" open>
+    <summary>How rules work</summary>
+    <div class="guide-body">
+      <ol>
+        <li><b>Every alert lands on the dashboard</b> no matter what. Rules only decide which ones <b>also push to your phone</b>.</li>
+        <li>A rule matches an alert when <b>Which products</b> and <b>Where</b> both fit. Leave a box empty to mean "any".</li>
+        <li><b>Text filters</b> narrow it down after that. An alert that matches a rule but fails its filters goes to the dashboard, with the reason in the feed.</li>
+        <li>If several rules match, you get <b>one</b> push, at the loudest matching rule's loudness. "Dashboard only" rules never push, so use them to keep things quiet on purpose.</li>
+        <li>Nothing changes until you press <b>Save</b>. <b>Check against the last 48 h</b> shows what each rule would have pushed.</li>
+      </ol>
+      <p class="muted small">Hover or tap a <span class="tip-sample">?</span> next to any box for what it does. Start from a recipe:</p>
+      <div class="starters">
+        <button type="button" data-starter="office-all" title="Every alert, outlook and text product from one office">Everything from an office</button>
+        <button type="button" data-starter="office-ww" title="Watches and warnings (emergencies included) from the offices you pick">Watches + warnings for offices</button>
+        <button type="button" data-starter="pds" title="Any PDS watch, warning or discussion in the country">PDS anywhere</button>
+        <button type="button" data-starter="spc-big" title="SPC Day 1-3 Moderate or High risk outlooks">SPC Moderate/High risk</button>
+        <button type="button" data-starter="quiet" title="Keep a kind of alert off your phone">Dashboard-only rule</button>
+      </div>
+    </div>
+  </details>
+
   <div class="row-actions">
     <button id="add-rule">+ New rule</button>
     <button id="preview" title="Run these rules over the alerts from the last 48 hours">Check against the last 48 h</button>

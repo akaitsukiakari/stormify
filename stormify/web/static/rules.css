@@ -122,3 +122,30 @@ details summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 /* Several of these boxes are display:flex, which would otherwise beat the hidden attribute. */
 .rules-page [hidden] { display: none !important; }
 .bulk-actions select { max-width: 220px; }
+
+/* Guide and "?" tips */
+.guide { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); margin-bottom: 12px; }
+.guide summary { cursor: pointer; padding: 10px 12px; font-weight: 700; }
+.guide-body { padding: 0 14px 12px; }
+.guide ol { margin: 0 0 10px; padding-left: 20px; line-height: 1.5; }
+.guide li { margin-bottom: 4px; }
+.starters { display: flex; flex-wrap: wrap; gap: 6px; }
+.tip, .tip-sample {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid var(--muted); color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1; flex: none;
+  vertical-align: middle; text-transform: none; letter-spacing: 0;
+}
+.tip { position: relative; cursor: help; margin-left: 2px; }
+.tip:hover, .tip:focus { color: var(--text); border-color: var(--accent); outline: none; }
+.tip::after {
+  content: attr(data-tip); position: absolute; left: -8px; top: calc(100% + 6px); z-index: 20; width: max-content; max-width: min(280px, 80vw);
+  padding: 8px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  color: var(--text); font-size: 12px; font-weight: 400; line-height: 1.4; white-space: normal; text-align: left;
+  display: none; pointer-events: none;
+}
+.tip:hover::after, .tip:focus::after { display: block; }
+.editor label > span:first-child { display: inline-flex; align-items: center; gap: 4px; }
+/* On a phone, show the tip as a bar along the bottom so it never runs off the screen. */
+@media (max-width: 640px) {
+  .tip::after { position: fixed; left: 16px; right: 16px; top: auto; bottom: 16px; width: auto; max-width: none; font-size: 13px; z-index: 1000; }
+}
