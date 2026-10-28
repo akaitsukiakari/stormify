@@ -34,10 +34,12 @@
     "Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report",
   ];
   const TAGS = [
-    ["emergency", "Emergency wording"], ["pds", "Particularly dangerous situation"], ["considerable", "Considerable damage threat"],
+    ["emergency", "Emergency wording"], ["pds", "PDS, particularly dangerous situation (NWS watches and warnings; for SPC MDs use a text filter)"], ["considerable", "Considerable damage threat"],
     ["destructive", "Destructive thunderstorm"], ["observed", "Observed / confirmed"], ["tornado-possible", "Tornado possible"],
-    ["risk-mrgl", "SPC Marginal risk"], ["risk-slgt", "SPC Slight risk"], ["risk-enh", "SPC Enhanced risk"],
-    ["risk-mdt", "SPC Moderate risk"], ["risk-high", "SPC High risk"],
+    ["risk-tstm", "SPC general thunderstorms (convective outlook)"],
+    ["risk-mrgl", "SPC Marginal risk, level 1 of 5 (convective outlook)"], ["risk-slgt", "SPC Slight risk, level 2 of 5 (convective outlook)"],
+    ["risk-enh", "SPC Enhanced risk, level 3 of 5 (convective outlook)"], ["risk-mdt", "SPC Moderate risk, level 4 of 5 (convective outlook)"],
+    ["risk-high", "SPC High risk, level 5 of 5 (convective outlook)"],
     ["tornado-10", "SPC 10% tornado"], ["tornado-15", "SPC 15% tornado"], ["tornado-30", "SPC 30% tornado"],
     ["hail-30", "SPC 30% hail"], ["hail-45", "SPC 45% hail"], ["wind-30", "SPC 30% wind"], ["wind-45", "SPC 45% wind"],
     ["severe-15", "SPC 15% severe (Day 3-8)"], ["severe-30", "SPC 30% severe (Day 3-8)"],
@@ -47,8 +49,11 @@
     ["watch-likely", "MD: watch likely"], ["watch-possible", "MD: watch possible"], ["tornado-watch", "MD: about a tornado watch"],
     ["svr-watch", "MD: about a severe thunderstorm watch"], ["winter", "MD: winter weather"], ["heavy-rain", "MD: heavy rain"],
     ["geomagnetic", "Space weather: geomagnetic"], ["radiation", "Space weather: radiation"], ["radio", "Space weather: radio blackout"],
-    ["g1", "G1"], ["g2", "G2"], ["g3", "G3"], ["g4", "G4"], ["g5", "G5"], ["s1", "S1"], ["s2", "S2"], ["s3", "S3"],
-    ["s4", "S4"], ["s5", "S5"], ["r1", "R1"], ["r2", "R2"], ["r3", "R3"], ["r4", "R4"], ["r5", "R5"],
+    ...["minor", "moderate", "strong", "severe", "extreme"].flatMap((w, i) => [
+      [`g${i + 1}`, `Geomagnetic storm G${i + 1} (${w}), aurora`],
+      [`s${i + 1}`, `Solar radiation storm S${i + 1} (${w})`],
+      [`r${i + 1}`, `Radio blackout R${i + 1} (${w})`],
+    ]),
     ["hurricane-warning", "NHC: hurricane warning in effect"], ["hurricane-watch", "NHC: hurricane watch in effect"],
     ["ts-warning", "NHC: TS warning in effect"], ["ts-watch", "NHC: TS watch in effect"], ["surge-warning", "NHC: surge warning"],
     ["surge-watch", "NHC: surge watch"], ["major-hurricane", "NHC: major hurricane"], ["ww-changes", "NHC: watches/warnings changed"],
@@ -66,6 +71,148 @@
   let dirty = false;
   let uidSeq = 0;
   const withUid = (r) => Object.assign(r, { _uid: ++uidSeq });
+
+  // ---- finder: one search box over offices, alert types, tags and kinds -----------------------
+  const KIND_INFO = {
+    Emergency: "Tornado, flash flood and other emergencies. They also count as Warnings.",
+    Warning: "Happening or about to happen: tornado, severe thunderstorm, flood, winter storm, red flag and other warnings, plus SWPC space weather alerts.",
+    Watch: "Conditions are right for it: tornado, severe thunderstorm, flood, winter storm watches and the like.",
+    Advisory: "Less serious hazards: wind, winter weather, dense fog, heat advisories. Also NHC public and forecast advisories.",
+    Statement: "Special weather statements, flood statements, follow-ups to warnings, SWPC summaries.",
+    Outlook: "All SPC outlooks (convective, tornado, hail, wind, Day 3-8 severe, fire weather) and NHC tropical weather outlooks.",
+    Discussion: "SPC mesoscale discussions.",
+    Product: "NWS text products like the Area Forecast Discussion (AFD), Hazardous Weather Outlook (HWO) and Public Information Statement (PNS). Needs [nws_products] in config.toml.",
+    Other: "Anything else, like NHC updates and discussions.",
+  };
+  const PRODUCTS = new Set(["Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report", "Hazardous Weather Outlook"]);
+  function kindOf(e) {
+    if (PRODUCTS.has(e)) return "Product";
+    if (e === "Mesoscale Discussion") return "Discussion";
+    if (/^(Geomagnetic|Solar Radiation|Radio Blackout).*Alert$/.test(e)) return "Warning";
+    if (/Summary$/.test(e) && /^(Geomagnetic|Solar|Radio)/.test(e)) return "Statement";
+    const m = e.toLowerCase().match(/(emergency|warning|watch|advisory|statement|outlook|message)$/);
+    return m ? m[1][0].toUpperCase() + m[1].slice(1) : "Other";
+  }
+  function sourceOf(e) {
+    if (/^Day \d/.test(e) || e === "Mesoscale Discussion") return "Storm Prediction Center (office SPC)";
+    if (/^Tropical (Cyclone|Weather Outlook)/.test(e)) return "National Hurricane Center (office NHC)";
+    if (/^(Geomagnetic|Solar Radiation|Radio Blackout)/.test(e)) return "Space Weather Prediction Center (office SWPC)";
+    if (PRODUCTS.has(e)) return "local NWS office text product";
+    return "local NWS offices";
+  }
+  // Where a rule already uses the thing (so you can find and open it).
+  function rulesUsing(item) {
+    return rules.filter((r) => {
+      const s = r.scope || {};
+      if (item.type === "office") return (s.offices || []).includes(item.value)
+        || (s.groups || []).some((g) => (groups[g] || []).includes(item.value));
+      if (item.type === "event") return (r.events || []).includes(item.value);
+      if (item.type === "tag") return (r.tags_any || []).includes(item.value);
+      if (item.type === "kind") return (r.kinds || []).includes(item.value);
+      return false;
+    });
+  }
+  const CENTER_WORDS = {
+    SPC: "severe convective outlook mesoscale discussion tornado hail wind fire", WNS: "severe convective outlook",
+    NHC: "hurricane tropical storm cyclone", CPHC: "hurricane tropical pacific",
+    SWPC: "geomagnetic aurora solar radiation radio blackout space weather",
+  };
+  function finderCatalog() {
+    const out = [];
+    for (const c of uniq([...Object.keys(OFFICES), ...(meta.offices || [])])) {
+      const where = OFFICES[c] || "";
+      const center = /Center$/.test(where);
+      out.push({ type: "office", value: c, title: where ? `${c} · ${where}` : c, words: `${c} ${where} ${CENTER_WORDS[c] || ""}`,
+        desc: center ? `National center. Scope a rule to ${c} to get its products.` : "NWS forecast office. Scope a rule to it for alerts from that office, plus SPC outlooks and MDs that cover it." });
+    }
+    for (const e of uniq([...EVENT_CATALOG, ...(meta.events || [])])) {
+      out.push({ type: "event", value: e, title: e, words: `${e} ${kindOf(e)} ${sourceOf(e)}`, desc: `Alert type. Kind: ${kindOf(e)}. From ${sourceOf(e)}.` });
+    }
+    for (const [t, d] of TAGS) out.push({ type: "tag", value: t, title: t, words: `${t} ${d}`, desc: `Tag: ${d}.` });
+    for (const k of KINDS) out.push({ type: "kind", value: k, title: k, words: `${k} ${KIND_INFO[k] || ""}`, desc: `Kind: ${KIND_INFO[k] || ""}` });
+    return out;
+  }
+  function finderSearch(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    const terms = q.split(/\s+/);
+    const order = { office: 0, event: 1, tag: 2, kind: 3 };
+    const scored = [];
+    for (const it of finderCatalog()) {
+      const title = it.title.toLowerCase(), words = it.words.toLowerCase(), v = it.value.toLowerCase();
+      if (!terms.every((t) => words.includes(t))) continue;
+      let score = 3;
+      if (v === q) score = 0;
+      else if (title.startsWith(q) || v.startsWith(q)) score = 1;
+      else if (title.includes(q)) score = 2;
+      scored.push([score, order[it.type], it]);
+    }
+    scored.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2].title.localeCompare(b[2].title));
+    return scored.slice(0, 14).map((x) => x[2]);
+  }
+  function starterFor(item) {
+    const v = item.value;
+    if (item.type === "office") {
+      const where = OFFICES[v] && !/Center$/.test(OFFICES[v]) ? OFFICES[v] : v;
+      return { name: `Everything from ${where}`, scope: { offices: [v] }, priority: 3 };
+    }
+    if (item.type === "event") return { name: `${v}, nationwide`, events: [v], scope: { nationwide: true } };
+    if (item.type === "tag") return { name: (TAGS.find(([t]) => t === v) || [v, v])[1].split(" (")[0], tags_any: [v], scope: { nationwide: true } };
+    if (item.type === "kind") return { name: `${v}, …`, kinds: [v], scope: { offices: [] } };
+    return { name: `Mentions “${v}”, nationwide`, scope: { nationwide: true }, filters: { include_any: [v] } };
+  }
+  function addToRule(r, item) {
+    const s = scopeOf(r);
+    const push = (obj, k, v) => { obj[k] = uniq([...(obj[k] || []), v]); };
+    if (item.type === "office") { push(s, "offices", item.value); delete s.nationwide; }
+    if (item.type === "event") push(r, "events", item.value);
+    if (item.type === "tag") push(r, "tags_any", item.value);
+    if (item.type === "kind") push(r, "kinds", item.value);
+    if (item.type === "text") { r.filters ||= {}; push(r.filters, "include_any", item.value); }
+  }
+  function renderFinder() {
+    const q = $("find").value;
+    const box = $("find-results");
+    if (!q.trim()) { box.innerHTML = ""; return; }
+    const open = rules.find((r) => r._uid === openUid);
+    const hits = finderSearch(q);
+    const text = { type: "text", value: q.trim(), title: `Alert text mentions “${q.trim()}”`, desc: "A text filter: matches any alert whose wording contains this, wherever it's from." };
+    const row = (it, i) => {
+      const used = it.type === "text" ? [] : rulesUsing(it);
+      return `<div class="find-row">
+        <div class="find-main">
+          <div><span class="find-type">${it.type === "text" ? "text" : it.type}</span> <b>${esc(it.title)}</b></div>
+          <div class="muted small">${esc(it.desc)}</div>
+          ${used.length ? `<div class="small">Used by: ${used.map((r) => `<a href="#" data-open="${r._uid}">${esc(r.name)}</a>`).join(", ")}</div>`
+            : it.type === "text" ? "" : `<div class="small muted">No rule uses it yet.</div>`}
+        </div>
+        <div class="find-acts">
+          <button type="button" data-find-new="${i}">New rule</button>
+          ${open ? `<button type="button" data-find-add="${i}" title="Add to “${esc(open.name)}”">Add to open rule</button>` : ""}
+        </div>
+      </div>`;
+    };
+    const all = [...hits, text];
+    box.innerHTML = (hits.length ? "" : `<div class="muted small">No office, alert type or tag matches. You can still match it in the alert text:</div>`)
+      + all.map(row).join("");
+    box.querySelectorAll("[data-find-new]").forEach((b) => b.addEventListener("click", () => {
+      addRule(starterFor(all[+b.dataset.findNew]));
+      toast("Added at the top. Adjust it, then Save.");
+    }));
+    box.querySelectorAll("[data-find-add]").forEach((b) => b.addEventListener("click", () => {
+      const r = rules.find((x) => x._uid === openUid);
+      if (!r) return;
+      addToRule(r, all[+b.dataset.findAdd]);
+      setDirty(); previews.clear(); renderRules();
+      toast(`Added to “${r.name}”. Save to keep it.`);
+    }));
+    box.querySelectorAll("[data-open]").forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault();
+      openUid = +a.dataset.open;
+      renderRules();
+      document.querySelector(`.rule[data-uid="${openUid}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }));
+  }
 
   // What each box does, shown from the "?" next to it (hover, or tap on a phone).
   const TIPS = {
@@ -519,6 +666,7 @@
     document.querySelector("#editor [data-k=name]")?.select();
   }
   $("add-rule").addEventListener("click", () => addRule());
+  $("find").addEventListener("input", renderFinder);
   document.querySelectorAll("[data-starter]").forEach((b) => b.addEventListener("click", () => {
     addRule(STARTERS[b.dataset.starter]);
     toast("Added at the top. Fill in the offices and name, then Save.");
