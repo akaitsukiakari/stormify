@@ -34,7 +34,8 @@ class Poller:
                 sources.append(NHCSource(cfg.nhc_base_url, cfg.user_agent, cfg.nhc_basins))
             if cfg.spc_enabled:
                 sources.append(SPCSource(cfg.spc_base_url, cfg.nws_base_url, cfg.user_agent,
-                                         tuple(cfg.spc_outlook_days), cfg.spc_mds, known_ids=db.known_alert_ids))
+                                         tuple(cfg.spc_outlook_days), cfg.spc_mds,
+                                         extra_outlooks=cfg.spc_extra_outlooks, known_ids=db.known_alert_ids))
             if cfg.swpc_enabled:
                 sources.append(SWPCSource(cfg.swpc_url, cfg.user_agent))
         self.sources = sources

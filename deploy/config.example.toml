@@ -28,11 +28,14 @@ keep_days = 0
 nhc_enabled = true
 nhc_basins = ["at", "ep", "cp"]
 
-# Storm Prediction Center: Day 1-3 convective outlooks (checked every 5 minutes) and
-# mesoscale discussions (every poll). They land under the Outlook and Discussion chips.
-# Push them with a rule, e.g. "tags_any": ["risk-mdt", "risk-high"] or "watch-likely".
+# Storm Prediction Center: Day 1-3 convective outlooks, the tornado/hail/wind and Day 3-8 severe
+# probabilities, Day 1-2 fire weather and dry thunderstorm outlooks (all checked every 5 minutes),
+# and mesoscale discussions (every poll). They land under the Outlook and Discussion chips.
+# Push them with a rule, e.g. "tags_any": ["risk-mdt", "risk-high"] or "watch-likely", or scope a
+# rule to your office to get every outlook that covers it.
 spc_enabled = true
 spc_outlook_days = [1, 2, 3]
+spc_extra_outlooks = true
 spc_mds = true
 
 # Space Weather Prediction Center watches, warnings and alerts (G, S and R scales).

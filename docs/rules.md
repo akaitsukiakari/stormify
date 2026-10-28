@@ -102,12 +102,20 @@ SPC products have office `SPC`. Watches themselves (`Tornado Watch`, `Severe Thu
 | Event | Kind | What it is |
 |---|---|---|
 | `Day 1 Convective Outlook`, `Day 2 …`, `Day 3 …` | Outlook | Each issuance, with its risk areas drawn in SPC's colors and the narrative text. The headline names the highest risk, e.g. `Day 1: Enhanced risk`. Updates for the same convective day thread together. |
+| `Day 1 Tornado Outlook`, `Day 1 Hail Outlook`, `Day 1 Wind Outlook` (and Day 2) | Outlook | The probability areas behind the categorical outlook, e.g. `Day 1: 30% hail · significant` |
+| `Day 3 Severe Outlook`, `Day 4 Severe Outlook` … `Day 8 Severe Outlook` | Outlook | Severe weather probabilities, e.g. `Day 5: 15% severe` |
+| `Day 1 Fire Weather Outlook`, `Day 2 …` | Outlook | Elevated, critical or extremely critical fire weather areas |
+| `Day 1 Dry Thunderstorm Outlook`, `Day 2 …` | Outlook | Isolated or scattered dry thunderstorm areas |
 | `Mesoscale Discussion` | Discussion | With its polygon, the areas affected, what it concerns and the watch probability. The headline reads `Mesoscale Discussion 1234 · Severe potential...Tornado Watch likely`. |
 
 Tags:
 
-- outlooks: the highest category, one of `risk-tstm`, `risk-mrgl`, `risk-slgt`, `risk-enh`, `risk-mdt`, `risk-high`
+- categorical outlooks: the highest category, one of `risk-tstm`, `risk-mrgl`, `risk-slgt`, `risk-enh`, `risk-mdt`, `risk-high`
+- probability outlooks: the highest probability, like `tornado-10`, `hail-30`, `wind-45` or `severe-15`, plus `significant` when there's a hatched area
+- fire weather: `fire-elevated`, `fire-critical`, `fire-extreme`, `dry-thunder`, `dry-thunder-scattered`
 - mesoscale discussions: `watch-likely`, `watch-possible`, `watch-unlikely`, `tornado-watch`, `svr-watch`, `winter`, `heavy-rain`
+
+**Outlooks for your office:** every outlook lists the forecast offices whose home city sits inside any of its areas (general thunderstorms and the lowest probabilities count). So a rule scoped to `{"offices": ["BOU"]}` catches each outlook that covers Denver/Boulder, and a rule scoped to `SPC` or nationwide catches them all. Upgrades (a higher category or probability) count as significant updates.
 
 A mesoscale discussion also matches an `offices` scope for any office in its `ATTN...WFO` line, and a `states` scope for the states in its header. So "MDs that concern Boulder" is `{"events": ["Mesoscale Discussion"], "scope": {"offices": ["BOU"]}}`. Its hail and wind (`min_hail_in`, `min_wind_mph`) are the "most probable peak" values when the MD gives them.
 
@@ -117,7 +125,7 @@ Extra template variables: `risk`, `md_number`, `concerning`, `watch_prob`. Defau
 stormify rules add --user scott --example spc    # Day 1 MDT/HIGH pushes, outlooks logged, "watch likely" MDs
 ```
 
-Turn it off with `spc_enabled = false`, or narrow it with `spc_outlook_days = [1]` and `spc_mds = false`.
+Turn it off with `spc_enabled = false`, or narrow it with `spc_outlook_days = [1]`, `spc_extra_outlooks = false` (only the categorical outlooks) and `spc_mds = false`.
 
 ## Space weather (SWPC)
 

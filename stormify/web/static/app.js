@@ -444,10 +444,14 @@
     if (isOutlook(a)) {
       // One feature per risk area so each gets SPC's color.
       const labels = (a.params || {}).risk_labels || [];
-      data = { type: "FeatureCollection", features: (a.geometry.geometries || []).map((g, i) => ({ type: "Feature", geometry: g, properties: { risk: labels[i] } })) };
+      const colors = (a.params || {}).risk_colors || [];
+      const named = ((a.params || {}).risk_names || []).length > 0;
+      data = { type: "FeatureCollection", features: (a.geometry.geometries || []).map((g, i) => ({ type: "Feature", geometry: g, properties: { risk: labels[i], color: colors[i], key: riskKey(a, labels[i], named) } })) };
       opts.onEachFeature = (f, l) => subs.push(l);
       style = (f) => {
-        const rc = RISK_COLORS[f.properties.risk] || c;
+        const rc = f.properties.color || RISK_COLORS[f.properties.risk] || c;
+        // Hatched "significant" areas come through black: outline them instead of shading.
+        if (rc === "#000000") return { color: "#e8e8e8", weight: 2, dashArray: "4 4", fill: false };
         return { color: rc, weight: 1.5, fillColor: rc, fillOpacity: 0.18 };
       };
     }
@@ -468,6 +472,10 @@
     return layer;
   }
 
+  // Legend key for one outlook area: categorical outlooks share a key per risk level ("risk:SLGT");
+  // probability and fire outlooks are keyed per outlook too ("risk:Day 1 Hail Outlook:0.15").
+  const riskKey = (a, label, named) => named ? `risk:${a.event}:${label}` : "risk:" + label;
+
   // Legend key for an alert: storms by name, everything else by event (emergencies on their own).
   // Outlooks are keyed per risk level instead ("risk:SLGT").
   function alertKey(a) {
@@ -484,7 +492,7 @@
       const a = layer.alert, force = a.id === selected;
       if (layer.subs.length) {
         layer.clearLayers();
-        layer.subs.forEach((l) => { if (force || !hiddenKeys.has("risk:" + l.feature.properties.risk)) layer.addLayer(l); });
+        layer.subs.forEach((l) => { if (force || !hiddenKeys.has(l.feature.properties.key)) layer.addLayer(l); });
         if (layer.getLayers().length) polyGroup.addLayer(layer);
       } else if (force || !hiddenKeys.has(alertKey(a))) {
         polyGroup.addLayer(layer);
@@ -505,7 +513,7 @@
     hiddenKeys.clear();
     if (hide) {
       for (const layer of layers.values()) {
-        if (layer.subs.length) layer.subs.forEach((l) => hiddenKeys.add("risk:" + l.feature.properties.risk));
+        if (layer.subs.length) layer.subs.forEach((l) => hiddenKeys.add(l.feature.properties.key));
         else hiddenKeys.add(alertKey(layer.alert));
       }
     }
@@ -642,10 +650,14 @@
       if (!layer || !layer.bounds.isValid() || !view.intersects(layer.bounds)) continue;
       if (isOutlook(a)) {
         // One row per risk level drawn, SPC's colors.
-        for (const r of (a.params || {}).risk_labels || []) {
-          const key = "risk:" + r;
-          if (!rows.has(key)) rows.set(key, { key, kind: "Outlook", color: RISK_COLORS[r] || colorFor(a), n: 1, rank: 10 + Object.keys(RISK_COLORS).indexOf(r) * -0.01, label: `Day ${(a.params || {}).day || ""} outlook: ${RISK_NAMES[r] || r}`, zoned: false });
-        }
+        const p = a.params || {};
+        (p.risk_labels || []).forEach((r, i) => {
+          const name = (p.risk_names || [])[i];
+          const key = riskKey(a, r, !!name);
+          const color = (p.risk_colors || [])[i] || RISK_COLORS[r] || colorFor(a);
+          const label = name ? `${a.event}: ${name}` : `Day ${p.day || ""} outlook: ${RISK_NAMES[r] || r}`;
+          if (!rows.has(key)) rows.set(key, { key, kind: "Outlook", color: color === "#000000" ? "#e8e8e8" : color, n: 1, rank: 10 + Object.keys(RISK_COLORS).indexOf(r) * -0.01 + (name ? 0.5 : 0), label, zoned: false });
+        });
         continue;
       }
       const storm = a.source === "nhc" ? ((a.params || {}).storm || a.event) : "";
