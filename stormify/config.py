@@ -13,6 +13,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# SPC watch text and probabilities, SPC fire weather and Day 4-8 discussions, WPC Mesoscale
+# Precipitation Discussions, tsunami messages and bulletins. Kept in step with
+# stormify/sources/nws_products.py's DEFAULT_NATIONAL.
+DEFAULT_NATIONAL = ("SEL", "WWP", "FWD", "SWO/D48", "FFG/MPD", "TSU", "TIB")
+
 
 @dataclass
 class Config:
@@ -36,6 +41,8 @@ class Config:
     # Space Weather Prediction Center watches, warnings, alerts and summaries.
     swpc_enabled: bool = True
     swpc_url: str = "https://services.swpc.noaa.gov/products/alerts.json"
+    # Also SWPC's routine text products: forecast discussion, 3-day and 27-day outlooks, weekly highlights.
+    swpc_text_products: bool = True
     # Fill in map shapes for alerts that only list zones (most watches and advisories).
     zone_shapes: bool = True
     zone_fetch_per_poll: int = 40
@@ -55,10 +62,12 @@ class Config:
     public_url: str = ""
     # CARTO basemaps key (free at https://carto.com/basemaps/apikey/). Without it the map uses plain OpenStreetMap tiles.
     map_key: str = ""
-    # NWS text products (AFD, HWO, RER, ...) for these locations; empty = off.
+    # NWS text products (AFD, HWO, RER, ...) for these locations; empty = off. types = ["*"] takes every type.
     products_locations: list = field(default_factory=list)
     products_types: list = field(default_factory=list)
     products_interval: int = 300
+    # National products not tied to an office: "TYPE" or "TYPE/LOCATION" (AWIPS). [] = off.
+    products_national: list = field(default_factory=lambda: list(DEFAULT_NATIONAL))
     extra: dict = field(default_factory=dict)
 
 
@@ -89,6 +98,8 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
             cfg.products_locations = list(products.get("offices", []))
             cfg.products_types = list(products.get("types", []))
             cfg.products_interval = int(products.get("poll_interval", cfg.products_interval))
+            if "national" in products:
+                cfg.products_national = list(products["national"])
     if not cfg.secret_key:
         cfg.secret_key = os.environ.get("STORMIFY_SECRET_KEY") or secrets.token_hex(32)
     return cfg

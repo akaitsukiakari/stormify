@@ -6,7 +6,7 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const OFFICES = window.STORMIFY_OFFICES || {};
-  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Product", "Other"];
+  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Message", "Product", "Other"];
   // Common products, so a rule can name one before it has ever shown up in your feed.
   const EVENT_CATALOG = [
     "Tornado Warning", "Tornado Watch", "Severe Thunderstorm Warning", "Severe Thunderstorm Watch",
@@ -31,6 +31,11 @@
     "Day 1 Dry Thunderstorm Outlook", "Day 2 Dry Thunderstorm Outlook",
     "Geomagnetic Storm Watch", "Geomagnetic Storm Warning", "Geomagnetic Storm Alert", "Geomagnetic Warning",
     "Solar Radiation Storm Warning", "Solar Radiation Storm Alert", "Radio Blackout Alert", "Radio Blackout Summary",
+    "Space Weather Message", "Space Weather Forecast Discussion", "Space Weather 3-Day Forecast", "Geomagnetic 3-Day Forecast",
+    "Space Weather 27-Day Outlook", "Space Weather Weekly Highlights", "Space Weather Advisory Outlook",
+    "SPC Watch Text", "SPC Watch Probabilities", "SPC Day 1 Fire Weather Outlook Discussion",
+    "SPC Day 2 Fire Weather Outlook Discussion", "SPC Day 3-8 Fire Weather Outlook Discussion",
+    "SPC Day 4-8 Convective Outlook Discussion", "WPC Mesoscale Precipitation Discussion",
     "Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report",
   ];
   const TAGS = [
@@ -81,12 +86,19 @@
     Statement: "Special weather statements, flood statements, follow-ups to warnings, SWPC summaries.",
     Outlook: "All SPC outlooks (convective, tornado, hail, wind, Day 3-8 severe, fire weather) and NHC tropical weather outlooks.",
     Discussion: "SPC mesoscale discussions.",
-    Product: "NWS text products like the Area Forecast Discussion (AFD), Hazardous Weather Outlook (HWO) and Public Information Statement (PNS). Needs [nws_products] in config.toml.",
+    Product: "NWS text products: AFD, HWO, PNS and the rest from the offices in [nws_products] in config.toml (types = [\"*\"] for every kind), plus SPC watch text, SPC fire weather discussions, WPC MPDs and tsunami messages nationwide.",
+    Message: "Messages that aren't a watch or warning, like Civil Emergency Messages and new kinds of SWPC messages.",
     Other: "Anything else, like NHC updates and discussions.",
   };
-  const PRODUCTS = new Set(["Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report", "Hazardous Weather Outlook"]);
+  const PRODUCTS = new Set(["Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report", "Hazardous Weather Outlook",
+    "SPC Watch Text", "SPC Watch Probabilities", "SPC Day 1 Fire Weather Outlook Discussion", "SPC Day 2 Fire Weather Outlook Discussion",
+    "SPC Day 3-8 Fire Weather Outlook Discussion", "SPC Day 4-8 Convective Outlook Discussion", "WPC Mesoscale Precipitation Discussion"]);
+  const SWPC_TEXT = { "Space Weather Forecast Discussion": "Discussion", "Space Weather 3-Day Forecast": "Outlook",
+    "Geomagnetic 3-Day Forecast": "Outlook", "Space Weather 27-Day Outlook": "Outlook", "Space Weather Weekly Highlights": "Product",
+    "Space Weather Advisory Outlook": "Outlook" };
   function kindOf(e) {
     if (PRODUCTS.has(e)) return "Product";
+    if (SWPC_TEXT[e]) return SWPC_TEXT[e];
     if (e === "Mesoscale Discussion") return "Discussion";
     if (/^(Geomagnetic|Solar Radiation|Radio Blackout).*Alert$/.test(e)) return "Warning";
     if (/Summary$/.test(e) && /^(Geomagnetic|Solar|Radio)/.test(e)) return "Statement";
@@ -94,7 +106,10 @@
     return m ? m[1][0].toUpperCase() + m[1].slice(1) : "Other";
   }
   function sourceOf(e) {
-    if (/^Day \d/.test(e) || e === "Mesoscale Discussion") return "Storm Prediction Center (office SPC)";
+    if (/^(Day \d|SPC )/.test(e) || e === "Mesoscale Discussion") return "Storm Prediction Center (office SPC)";
+    if (/^WPC /.test(e)) return "Weather Prediction Center (office WPC)";
+    if (/^Tsunami/.test(e)) return "local NWS offices and the tsunami warning centers (NTWC, PTWC)";
+    if (/^(Space Weather|Geomagnetic 3-Day)/.test(e)) return "Space Weather Prediction Center (office SWPC)";
     if (/^Tropical (Cyclone|Weather Outlook)/.test(e)) return "National Hurricane Center (office NHC)";
     if (/^(Geomagnetic|Solar Radiation|Radio Blackout)/.test(e)) return "Space Weather Prediction Center (office SWPC)";
     if (PRODUCTS.has(e)) return "local NWS office text product";
@@ -115,7 +130,8 @@
   const CENTER_WORDS = {
     SPC: "severe convective outlook mesoscale discussion tornado hail wind fire", WNS: "severe convective outlook",
     NHC: "hurricane tropical storm cyclone", CPHC: "hurricane tropical pacific",
-    SWPC: "geomagnetic aurora solar radiation radio blackout space weather",
+    SWPC: "geomagnetic aurora solar radiation radio blackout space weather forecast discussion",
+    WPC: "mesoscale precipitation discussion mpd heavy rain flooding", NTWC: "tsunami", PTWC: "tsunami pacific",
   };
   function finderCatalog() {
     const out = [];
@@ -254,6 +270,11 @@
   const normOffice = (o) => { o = String(o).trim().toUpperCase(); return o.length === 4 && "KP".includes(o[0]) ? o.slice(1) : o; };
   const uniq = (xs) => [...new Set(xs)];
   const scopeOf = (r) => (r.scope ||= {});
+
+  function fmtWhen(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? iso : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
 
   function setDirty(on = true) {
     dirty = on;
@@ -516,6 +537,15 @@
           <label>Body<textarea data-k="body_template" rows="2" placeholder="{threat}{area_short}&#10;Until {expires}" spellcheck="false">${esc(r.body_template || "")}</textarea></label>
         </details>
       </div>
+      <div class="tester">
+        <div class="tester-head"><b>Try it</b> <span class="muted small">Uses the rule as it is now, saved or not.</span></div>
+        <div class="tester-buttons">
+          <button type="button" data-test="push" title="Push this rule's newest match to your phone, marked TEST">Send a test push</button>
+          <button type="button" data-test="matches" title="What this rule matched in the last two weeks">Show recent matches</button>
+          <span class="muted small" data-test-note></span>
+        </div>
+        <div class="matches" data-matches></div>
+      </div>
       <div class="editor-actions">
         <button type="button" data-act="up">Move up</button>
         <button type="button" data-act="down">Move down</button>
@@ -586,6 +616,53 @@
     chip("states", s, "states", { normalize: (v) => v.trim().toUpperCase().slice(0, 2), placeholder: "CO" });
     chip("zones", s, "zones", { normalize: (v) => v.trim().toUpperCase(), placeholder: "COZ039" });
     chip("same", s, "same", { normalize: (v) => v.trim().replace(/\D/g, "").padStart(6, "0"), placeholder: "008005" });
+
+    const note = el.querySelector("[data-test-note]");
+    const body = () => JSON.stringify({ rule: cleanRule(r), office_groups: groups });
+    const testPush = async (alertId, btn) => {
+      btn.disabled = true;
+      note.textContent = "Sending…";
+      try {
+        const j = await api("/api/rules/test-push", { method: "POST", body: JSON.stringify({ ...JSON.parse(body()), alert_id: alertId || undefined }) });
+        note.textContent = j.sample
+          ? "Nothing has matched this rule in the last two weeks, so it sent a made-up sample in this rule's format."
+          : `Sent: ${j.title}`;
+      } catch (err) {
+        note.textContent = "";
+        if (err.message !== "login") banner("Test push failed: " + err.message);
+      } finally { btn.disabled = false; }
+    };
+    const showMatches = async (btn) => {
+      const box = el.querySelector("[data-matches]");
+      btn.disabled = true;
+      note.textContent = "Looking…";
+      try {
+        const j = await api("/api/rules/matches", { method: "POST", body: body() });
+        const n = j.matches.length;
+        note.textContent = n ? `${n === 40 ? "Newest 40" : n} in the last ${j.days} days${j.truncated ? " (only the newest alerts were checked)" : ""}.`
+          : `Nothing in the last ${j.days} days matches this rule.`;
+        box.innerHTML = n ? j.matches.map((m) => `
+          <div class="match${m.filtered ? " filtered" : ""}">
+            <div class="match-main">
+              <div class="match-when muted small">${esc(fmtWhen(m.first_seen))} · ${esc(m.office || "")} · ${esc(m.kind)}${m.cancel ? " · cancellation" : ""}</div>
+              <div class="match-title">${esc(m.title)}</div>
+              <div class="match-body">${esc(m.body).replace(/\n/g, "<br>")}</div>
+              ${m.filtered ? `<div class="match-why">Matches, but the text filters stop it: ${esc(m.filtered)}</div>` : ""}
+            </div>
+            <button type="button" data-push-id="${esc(m.id)}" title="Push this one to your phone the way this rule would, marked TEST">Test push</button>
+          </div>`).join("") : "";
+      } catch (err) {
+        note.textContent = "";
+        if (err.message !== "login") banner("Couldn't load matches: " + err.message);
+      } finally { btn.disabled = false; }
+    };
+    el.querySelector(".tester").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.test === "push") testPush(null, b);
+      else if (b.dataset.test === "matches") showMatches(b);
+      else if (b.dataset.pushId) testPush(b.dataset.pushId, b);
+    });
 
     el.querySelector(".editor-actions").addEventListener("click", (e) => {
       const act = e.target.dataset.act;
@@ -756,6 +833,33 @@
       $("preview-note").textContent = "";
       if (e.message !== "login") banner("Couldn't check: " + e.message);
     } finally { $("preview").disabled = false; }
+  });
+
+  // ---- delete every rule ----------------------------------------------------------------------------
+  const wipe = $("wipe-box"), wipeWord = $("wipe-word");
+  $("wipe").addEventListener("click", () => {
+    wipe.hidden = !wipe.hidden;
+    $("wipe-count").textContent = `${rules.length} rule${rules.length === 1 ? "" : "s"}`;
+    wipeWord.value = "";
+    $("wipe-ok").disabled = true;
+    if (!wipe.hidden) wipeWord.focus();
+  });
+  wipeWord.addEventListener("input", () => { $("wipe-ok").disabled = wipeWord.value.trim().toLowerCase() !== "confirm"; });
+  $("wipe-cancel").addEventListener("click", () => { wipe.hidden = true; });
+  $("wipe-ok").addEventListener("click", async () => {
+    if (wipeWord.value.trim().toLowerCase() !== "confirm") return;
+    $("wipe-ok").disabled = true;
+    try {
+      await api("/api/rules", { method: "PUT", body: JSON.stringify({ rules: [] }) });
+      rules = []; selected = new Set(); openUid = null;
+      setDirty(false); previews.clear(); renderRules();
+      wipe.hidden = true;
+      banner("");
+      toast("All rules deleted. Everything still lands on the dashboard; nothing pushes until you add rules.");
+    } catch (e) {
+      $("wipe-ok").disabled = false;
+      if (e.message !== "login") banner("Not deleted: " + e.message);
+    }
   });
 
   // ---- import ---------------------------------------------------------------------------------------

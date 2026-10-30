@@ -14,7 +14,8 @@ def summary(uid, code, when, name):
             "issuingOffice": "KBOU", "issuanceTime": when, "productCode": code, "productName": name}
 
 
-def product(uid, code, when, name, text="\n000\nFXUS65 KBOU 071530\nAFDBOU\n\nArea Forecast Discussion\n"):
+def product(uid, code, when, name, text=None):
+    text = text if text is not None else f"\n000\nFXUS65 KBOU 071530\n{code}BOU\n\n{name}\n"
     return {**summary(uid, code, when, name), "productText": text}
 
 
@@ -142,6 +143,9 @@ def test_config_and_poller_wiring(tmp_path):
     assert src and src[0].types == ["AFD", "HWO", "RER", "PNS", "LSR"]
 
 
-def test_products_off_by_default(tmp_path, cfg):
+def test_office_products_off_by_default_national_on(tmp_path, cfg):
     from stormify.db import Database
+    src = [s for s in Poller(cfg, Database(cfg.db_path)).sources if s.name == "nws-products"]
+    assert src and src[0].locations == [] and "TSU" in src[0].national and "FFG/MPD" in src[0].national
+    cfg.products_national = []
     assert "nws-products" not in [s.name for s in Poller(cfg, Database(cfg.db_path)).sources]

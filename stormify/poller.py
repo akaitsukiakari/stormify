@@ -26,10 +26,11 @@ class Poller:
         self.nws = NWSAlertsSource(cfg.nws_base_url, cfg.user_agent)
         if sources is None:
             sources = [self.nws]
-            if cfg.products_locations:
+            if cfg.products_locations or cfg.products_national:
                 sources.append(NWSProductsSource(
                     cfg.nws_base_url, cfg.user_agent, cfg.products_locations,
-                    cfg.products_types or DEFAULT_TYPES, cfg.products_interval, known_ids=db.known_alert_ids))
+                    cfg.products_types or DEFAULT_TYPES, cfg.products_interval, known_ids=db.known_alert_ids,
+                    national=cfg.products_national))
             if cfg.nhc_enabled:
                 sources.append(NHCSource(cfg.nhc_base_url, cfg.user_agent, cfg.nhc_basins))
             if cfg.spc_enabled:
@@ -37,7 +38,7 @@ class Poller:
                                          tuple(cfg.spc_outlook_days), cfg.spc_mds,
                                          extra_outlooks=cfg.spc_extra_outlooks, known_ids=db.known_alert_ids))
             if cfg.swpc_enabled:
-                sources.append(SWPCSource(cfg.swpc_url, cfg.user_agent))
+                sources.append(SWPCSource(cfg.swpc_url, cfg.user_agent, text_products=cfg.swpc_text_products))
         self.sources = sources
         self.engine = engine or Engine(db, cfg, tz_lookup=self.nws.zone_timezone)
         self._stop = False
@@ -58,6 +59,10 @@ class Poller:
             except (requests.RequestException, ValueError) as e:
                 errors.append(f"{src.name}: {e}")
                 log.warning("poll of %s failed: %s", src.name, e)
+                continue
+            except Exception as e:  # a bug in one source must not skip the sources after it
+                errors.append(f"{src.name}: {type(e).__name__}: {e}")
+                log.exception("poll of %s failed", src.name)
                 continue
             if alerts is None:  # not modified
                 continue

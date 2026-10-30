@@ -267,6 +267,21 @@ class Database:
                 q = ",".join("?" * len(chunk))
                 c.execute(f"UPDATE alerts SET last_seen=? WHERE id IN ({q})", [now, *chunk])
 
+    def iter_alerts(self, since: str, limit: int = 20000, pre=None):
+        """Archived alerts first seen since `since`, newest first, read a row at a time.
+
+        pre(event, kind, tags) can turn a row down before its full JSON is read and parsed, which is
+        most of the cost on a Pi Zero."""
+        cur = self.conn.execute("SELECT id, event, kind, tags_json, first_seen FROM alerts WHERE first_seen >= ?"
+                                " ORDER BY first_seen DESC, sent DESC LIMIT ?", (since, limit))
+        for aid, event, kind, tags_json, first_seen in cur.fetchall():
+            if pre and not pre(event, kind, json.loads(tags_json or "[]")):
+                yield None, first_seen
+                continue
+            a = self.get_alert(aid)
+            if a:
+                yield a, first_seen
+
     def get_alert(self, alert_id: str) -> Alert | None:
         row = self.conn.execute("SELECT data_json FROM alerts WHERE id=?", (alert_id,)).fetchone()
         return Alert.from_dict(json.loads(row[0])) if row else None

@@ -127,6 +127,10 @@ stormify rules add --user scott --example spc    # Day 1 MDT/HIGH pushes, outloo
 
 Turn it off with `spc_enabled = false`, or narrow it with `spc_outlook_days = [1]`, `spc_extra_outlooks = false` (only the categorical outlooks) and `spc_mds = false`.
 
+## National text products
+
+On by default (`national` under `[nws_products]`), with the office of the center that issued them: SPC watch text (`SPC Watch Text`, tagged `pds` when it says so), `SPC Watch Probabilities`, `SPC Day 1/2/3-8 Fire Weather Outlook Discussion`, `SPC Day 4-8 Convective Outlook Discussion`, `WPC Mesoscale Precipitation Discussion` (office `WPC`), and tsunami messages and bulletins (offices `NTWC` and `PTWC`; tsunami warnings, watches and advisories for US coasts also come through the alerts feed). All of these are kind `Product`. For every product a forecast office issues, set `types = ["*"]`.
+
 ## Space weather (SWPC)
 
 Space Weather Prediction Center messages have office `SWPC`. The event says what and how sure: `Geomagnetic Storm Watch` (predicted), `Geomagnetic Storm Warning` (expected soon), `Geomagnetic Storm Alert` (reached; tagged `observed`), `… Summary`, and the same for `Solar Radiation Storm` and `Radio Blackout`. K-index warnings below storm level are `Geomagnetic Warning`. Extended warnings thread with the original, and cancellations cancel it.
@@ -139,7 +143,9 @@ Extra template variables: `scale` (`G3`) and `scale_desc` (`G3 (Strong)`).
 stormify rules add --user scott --example space  # push G3 and up, log the rest
 ```
 
-Turn it off with `swpc_enabled = false`.
+SWPC's routine text products come in too, tagged `space` and `forecast` (never `g1`–`g5`, so a forecast doesn't set off a storm rule): `Space Weather Forecast Discussion`, `Space Weather 3-Day Forecast`, `Geomagnetic 3-Day Forecast`, `Space Weather 27-Day Outlook`, `Space Weather Weekly Highlights` and `Space Weather Advisory Outlook`. A message type Stormify doesn't recognize yet still comes in as `Space Weather Message` (kind `Message`).
+
+Turn it off with `swpc_enabled = false`, or just the text products with `swpc_text_products = false`.
 
 ## Templates
 
