@@ -239,3 +239,38 @@ def test_older_database_reads_the_slow_way_until_backfilled(cfg):
     db.conn.execute("UPDATE alerts SET first_seen='2000-01-01T00:00:00Z'")
     db.prune(30)
     assert db.conn.execute("SELECT COUNT(*) FROM alert_lite").fetchone()[0] == 0
+
+
+def test_rule_matches_and_test_push(client, monkeypatch):
+    import stormify.web.app as webapp
+    from conftest import FakeChannel
+    got = []
+    monkeypatch.setattr(webapp, "channels_for_user", lambda s: [FakeChannel(got)])
+    login(client)
+    rule = {"name": "BOU warnings", "kinds": ["Warning"], "scope": {"offices": ["BOU"]}, "priority": 4,
+            "enabled": False}
+    m = client.post("/api/rules/matches", json={"rule": rule}).json
+    assert m["matches"] and all(x["office"] == "BOU" and x["kind"] in ("Warning", "Emergency") for x in m["matches"])
+    first = m["matches"][0]
+    assert first["title"] and "TEST" not in first["title"]
+    # Newest match by default, marked TEST, at the rule's loudness.
+    r = client.post("/api/rules/test-push", json={"rule": rule}).json
+    assert r["ok"] and not r["sample"] and r["alert_id"] == first["id"]
+    assert got[-1].title.startswith("TEST ") and got[-1].is_test and got[-1].priority == 4
+    # A chosen match.
+    other = m["matches"][-1]
+    r = client.post("/api/rules/test-push", json={"rule": rule, "alert_id": other["id"]}).json
+    assert r["alert_id"] == other["id"]
+    # Nothing matches yet: a made-up sample, still in the rule's format.
+    none = {"name": "Tsunami", "events": ["Tsunami Warning"], "scope": {"offices": ["LIX"]}}
+    assert client.post("/api/rules/matches", json={"rule": none}).json["matches"] == []
+    r = client.post("/api/rules/test-push", json={"rule": none}).json
+    assert r["sample"] and got[-1].title == "TEST Tsunami Warning · LIX"
+    assert client.post("/api/rules/test-push", json={"rule": {"name": "x", "bogus": 1}}).status_code == 400
+
+
+def test_delete_all_rules(client, db):
+    login(client)
+    assert client.get("/api/rules").json["rules"]
+    assert client.put("/api/rules", json={"rules": []}).json["count"] == 0
+    assert client.get("/api/rules").json["rules"] == []

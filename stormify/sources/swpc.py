@@ -18,8 +18,10 @@ Message shape (abridged):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -45,7 +47,20 @@ SCALE_NAMES = {"G": "Geomagnetic Storm", "S": "Solar Radiation Storm", "R": "Rad
 SCALE_WORDS = {1: "Minor", 2: "Moderate", 3: "Strong", 4: "Severe", 5: "Extreme"}
 SEVERITY = {1: "Minor", 2: "Moderate", 3: "Severe", 4: "Extreme", 5: "Extreme"}
 TYPE_KIND = {"WATCH": "Watch", "WARNING": "Warning", "EXTENDED WARNING": "Warning", "ALERT": "Warning",
-             "SUMMARY": "Statement"}
+             "SUMMARY": "Statement", "MESSAGE": "Message"}
+
+
+# SWPC's routine text products (services.swpc.noaa.gov/text/...): slug, file, event, kind.
+# Each issuance becomes its own entry. A file SWPC doesn't publish (404) is skipped and retried hourly.
+TEXT_PRODUCTS = [
+    ("discussion", "discussion.txt", "Space Weather Forecast Discussion", "Discussion"),
+    ("3day", "3-day-forecast.txt", "Space Weather 3-Day Forecast", "Outlook"),
+    ("3day-geomag", "3-day-geomag-forecast.txt", "Geomagnetic 3-Day Forecast", "Outlook"),
+    ("27day", "27-day-outlook.txt", "Space Weather 27-Day Outlook", "Outlook"),
+    ("weekly", "weekly.txt", "Space Weather Weekly Highlights", "Product"),
+    ("advisory-outlook", "advisory-outlook.txt", "Space Weather Advisory Outlook", "Outlook"),
+]
+ISSUED_RE = re.compile(r":Issued:\s*(\d{4} \w{3} \d{1,2} \d{4}) UTC", re.I)
 
 
 def _swpc_time(s: str) -> datetime | None:
@@ -73,8 +88,8 @@ def topic_of(text: str, scale: str) -> str:
 def parse_message(item: dict) -> Alert | None:
     text = (item.get("message") or "").replace("\r", "").strip()
     head = HEAD_RE.search(text)
-    if not head:
-        return None
+    if not head and not CODE_RE.search(text):
+        return None  # not an SWPC message at all
     code_m = CODE_RE.search(text)
     code = code_m.group(1).upper() if code_m else (item.get("product_id") or "").upper()
     serial = (SERIAL_RE.search(text) or [None, ""])[1]
@@ -88,7 +103,13 @@ def parse_message(item: dict) -> Alert | None:
         except ValueError:
             issued = datetime.now(timezone.utc)
 
-    mtype, what = head.group(1).upper(), head.group(2)
+    if head:
+        mtype, what = head.group(1).upper(), head.group(2)
+    else:
+        # A message type we don't know yet: keep it rather than drop it.
+        body = [x.strip() for x in text.split("\n") if x.strip() and not re.match(
+            r"^(Space Weather Message Code|Serial Number|Issue Time):", x.strip(), re.I)]
+        mtype, what = "MESSAGE", (body[0] if body else "Space weather message")[:200]
     cancel = mtype.startswith("CANCEL")
     base_type = mtype.replace("CANCEL ", "") if cancel else mtype
 
@@ -108,7 +129,7 @@ def parse_message(item: dict) -> Alert | None:
         tags.append("severe-space")
 
     kind_word = {"WATCH": "Watch", "WARNING": "Warning", "EXTENDED WARNING": "Warning",
-                 "ALERT": "Alert", "SUMMARY": "Summary"}[base_type]
+                 "ALERT": "Alert", "SUMMARY": "Summary", "MESSAGE": "Message"}[base_type]
     family = SCALE_NAMES.get(scale) or {"geomagnetic": "Geomagnetic", "radiation": "Solar Radiation",
                                         "radio": "Radio Blackout", "space": "Space Weather"}[topic]
     event = f"{family} {kind_word}"
@@ -154,18 +175,96 @@ def parse_message(item: dict) -> Alert | None:
     )
 
 
+def parse_text_product(text: str, slug: str, event: str, kind: str, url: str) -> Alert | None:
+    text = (text or "").replace("\r", "").strip()
+    if not text:
+        return None
+    issued = None
+    if m := ISSUED_RE.search(text):
+        issued = _swpc_time(m.group(1))
+    stamp = issued.strftime("%Y%m%d%H%M") if issued else hashlib.sha1(text.encode()).hexdigest()[:12]
+    issued = issued or datetime.now(timezone.utc)
+    # No g3/s3/r3 tags: those mean a watch, warning or alert, and a forecast naming G3 isn't one.
+    tags = ["space", "forecast"]
+    params: dict = {"code": slug, "text_product": True}
+    return Alert(
+        id=f"swpc-text:{slug}:{stamp}",
+        source="swpc",
+        event=event,
+        headline=f"{event}, issued {issued.strftime('%b %d %H%M')} UTC",
+        description=text,
+        area_desc="Earth",
+        office="SWPC",
+        sender_name="NOAA Space Weather Prediction Center",
+        severity="Minor",
+        sent=_ts(issued),
+        effective=_ts(issued),
+        thread_key=f"swpc-text:{slug}:{stamp}",
+        tags=sorted(set(tags)),
+        kind=kind,
+        event_tz="UTC",
+        url=url,
+        params=params,
+    )
+
+
 class SWPCSource(Source):
     name = "swpc"
 
     def __init__(self, url: str, user_agent: str, session: requests.Session | None = None,
-                 timeout: float = 30.0):
+                 timeout: float = 30.0, text_products: bool = True, text_base: str = "",
+                 text_interval: int = 900):
         self.url = url
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent, "Accept": "application/json"})
         self.timeout = timeout
         self._validators: dict[str, str] = {}
+        self.text_products = text_products
+        # alerts.json lives at .../products/alerts.json; the text files at .../text/.
+        self.text_base = (text_base or url.split("/products/")[0] + "/text").rstrip("/")
+        self.text_interval = text_interval
+        self._text_last = 0.0
+        self._text_validators: dict[str, dict[str, str]] = {}
+        self._text_skip: dict[str, float] = {}
+
+    def _poll_text(self) -> list[Alert]:
+        if time.monotonic() - self._text_last < self.text_interval and self._text_last:
+            return []
+        self._text_last = time.monotonic()
+        out = []
+        for slug, fname, event, kind in TEXT_PRODUCTS:
+            if time.monotonic() < self._text_skip.get(slug, 0):
+                continue
+            url = f"{self.text_base}/{fname}"
+            v = self._text_validators.get(slug, {})
+            headers = {k: v[h] for k, h in (("If-None-Match", "etag"), ("If-Modified-Since", "modified")) if v.get(h)}
+            try:
+                resp = self.session.get(url, headers=headers, timeout=self.timeout)
+                if resp.status_code == 304:
+                    continue
+                if resp.status_code == 404:
+                    log.info("SWPC doesn't publish %s; trying again in an hour", url)
+                    self._text_skip[slug] = time.monotonic() + 3600
+                    continue
+                resp.raise_for_status()
+                a = parse_text_product(resp.text, slug, event, kind, url)
+            except Exception as e:  # one text file must never stop the alerts feed
+                log.warning("SWPC %s failed: %s", fname, e)
+                continue
+            self._text_validators[slug] = {"etag": resp.headers.get("ETag", ""),
+                                           "modified": resp.headers.get("Last-Modified", "")}
+            if a:
+                out.append(a)
+        return out
 
     def poll(self) -> list[Alert] | None:
+        extra = self._poll_text() if self.text_products else []
+        alerts = self._poll_alerts()
+        if alerts is None:
+            return extra or None
+        return alerts + extra
+
+    def _poll_alerts(self) -> list[Alert] | None:
         headers = {}
         if self._validators.get("etag"):
             headers["If-None-Match"] = self._validators["etag"]

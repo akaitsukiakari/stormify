@@ -161,3 +161,22 @@ details summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 .find-acts { display: flex; gap: 6px; flex: none; align-items: center; }
 .find-type { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-right: 2px; }
 @media (max-width: 640px) { .find-row { flex-direction: column; } }
+
+/* "Try it" in the rule editor */
+.tester { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.tester-head { margin-bottom: 6px; }
+.tester-buttons { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.matches { margin-top: 6px; max-height: 420px; overflow-y: auto; }
+.match { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); }
+.match:first-child { border-top: 0; }
+.match-main { flex: 1; min-width: 0; }
+.match-title { font-weight: 600; overflow-wrap: anywhere; }
+.match-body { font-size: 13px; overflow-wrap: anywhere; }
+.match.filtered .match-title, .match.filtered .match-body { opacity: .6; }
+.match-why { font-size: 12px; color: var(--warn, var(--muted)); }
+.match button { flex: none; }
+
+/* Delete all rules */
+.wipe-box { margin: 8px 0; padding: 10px; border: 1px solid var(--bad); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wipe-box p { margin: 0; flex-basis: 100%; }
+.wipe-box input { width: 9em; }
