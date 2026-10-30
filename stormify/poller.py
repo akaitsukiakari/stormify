@@ -18,6 +18,19 @@ from .zones import ZoneShapes, load_pending, pending_from_alert
 log = logging.getLogger(__name__)
 
 
+def rule_offices(db: Database) -> list[str]:
+    """Every office named in a turned-on rule, directly or through an office group."""
+    out: set[str] = set()
+    for u in db.list_users():
+        groups = (u.get("settings") or {}).get("office_groups") or {}
+        for r in db.list_rules(u["id"], enabled_only=True):
+            scope = r.get("scope") or {}
+            out.update(str(o).upper() for o in scope.get("offices") or [])
+            for g in scope.get("groups") or []:
+                out.update(str(o).upper() for o in groups.get(g) or [])
+    return sorted(out)
+
+
 class Poller:
     def __init__(self, cfg: Config, db: Database, sources: list[Source] | None = None,
                  engine: Engine | None = None):
@@ -26,11 +39,11 @@ class Poller:
         self.nws = NWSAlertsSource(cfg.nws_base_url, cfg.user_agent)
         if sources is None:
             sources = [self.nws]
-            if cfg.products_locations or cfg.products_national:
+            if cfg.products_enabled:
                 sources.append(NWSProductsSource(
                     cfg.nws_base_url, cfg.user_agent, cfg.products_locations,
                     cfg.products_types or DEFAULT_TYPES, cfg.products_interval, known_ids=db.known_alert_ids,
-                    national=cfg.products_national))
+                    national=cfg.products_national, rule_offices=lambda: rule_offices(db)))
             if cfg.nhc_enabled:
                 sources.append(NHCSource(cfg.nhc_base_url, cfg.user_agent, cfg.nhc_basins))
             if cfg.spc_enabled:

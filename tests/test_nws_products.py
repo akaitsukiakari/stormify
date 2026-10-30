@@ -147,5 +147,5 @@ def test_office_products_off_by_default_national_on(tmp_path, cfg):
     from stormify.db import Database
     src = [s for s in Poller(cfg, Database(cfg.db_path)).sources if s.name == "nws-products"]
     assert src and src[0].locations == [] and "TSU" in src[0].national and "FFG/MPD" in src[0].national
-    cfg.products_national = []
+    cfg.products_enabled = False
     assert "nws-products" not in [s.name for s in Poller(cfg, Database(cfg.db_path)).sources]

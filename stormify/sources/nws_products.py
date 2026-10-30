@@ -129,8 +129,11 @@ class NWSProductsSource(Source):
     def __init__(self, base_url: str, user_agent: str, locations: list[str], types: list[str],
                  interval: int = 300, known_ids: Callable[[list[str]], set[str]] | None = None,
                  max_per_type: int = 3, session: requests.Session | None = None, timeout: float = 30.0,
-                 national: list[str] | None = None, max_all: int = 50, max_national: int = 10):
+                 national: list[str] | None = None, max_all: int = 50, max_national: int = 10,
+                 rule_offices: Callable[[], list[str]] | None = None):
         self.base_url = base_url.rstrip("/")
+        # Offices named in anyone's rules: every product they issue, whatever `types` says.
+        self.rule_offices = rule_offices or (lambda: [])
         self.locations = [_office(x) for x in locations if x.strip()]
         self.types = [t.strip().upper() for t in types if t.strip()]
         self.all_types = "*" in self.types
@@ -229,9 +232,17 @@ class NWSProductsSource(Source):
                 return
             self._take(key, graph, limit, location, alerts, errors)
 
-        for loc in self.locations:
-            types = list(self.types)
-            if self.all_types:
+        try:
+            from_rules = {_office(x) for x in self.rule_offices() if x and x.strip()}
+        except Exception:  # a bad rule mustn't stop the configured offices
+            log.exception("reading offices from rules failed")
+            from_rules = set()
+        from_rules -= set(CENTERS.values()) | {"WNS", "WNH", "WNP", "NHC", "SPC", "SWPC", ""}
+        plan = [(loc, self.all_types or loc in from_rules) for loc in self.locations]
+        plan += [(loc, True) for loc in sorted(from_rules) if loc not in self.locations]
+        for loc, everything in plan:
+            types = list(self.types) if loc in self.locations else []
+            if everything:
                 attempts += 1
                 try:
                     graph = self._office_products(loc)

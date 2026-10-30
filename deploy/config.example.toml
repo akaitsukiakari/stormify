@@ -67,10 +67,12 @@ map_key = ""
 # NWS text products (Area Forecast Discussion, Hazardous Weather Outlook, Record Event
 # Report, ...). These aren't alerts, so the alerts feed never carries them. They land on
 # the dashboard under the "Product" chip; add a rule with "kinds": ["Product"] to push them.
-# Leave offices empty to turn office products off.
+# Every office named in your rules (directly or through an office group) gets every product it
+# issues, with nothing to set here. List extra offices below only to pull products from offices
+# no rule names yet; those get `types`. enabled = false turns all text products off.
 [nws_products]
-offices = []                                  # e.g. ["BOU"]
-types = ["AFD", "HWO", "RER", "PNS", "LSR"]   # AWIPS product codes, or ["*"] for every product the office issues
+offices = []                                  # e.g. ["PUB"]
+types = ["AFD", "HWO", "RER", "PNS", "LSR"]   # AWIPS product codes, or ["*"] for every product
 poll_interval = 300                           # seconds; products change slowly
 # National products not tied to an office, as "TYPE" or "TYPE/LOCATION". The default is SPC watch
 # text and probabilities, SPC fire weather and Day 4-8 discussions, WPC Mesoscale Precipitation

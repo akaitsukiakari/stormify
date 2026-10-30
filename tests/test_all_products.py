@@ -168,3 +168,26 @@ def test_poller_keeps_going_after_a_buggy_source(tmp_path):
     p.poll_once()
     assert Fine.polled
     assert "broken" in p.db.heartbeat()["last_error"]
+
+
+def test_offices_in_rules_get_every_product():
+    items = [item("a", "AFD"), item("p", "PNS"), item("l", "AFD", office="KLIX")]
+    sess = Session({"/products?office=KBOU&limit=50": items[:2], "/products?office=KLIX&limit=50": items[2:],
+                    "/products/types/HWO/locations/GRR": []}, items)
+    # GRR is in the config with explicit types; BOU and LIX are only in rules. Centers are ignored.
+    src = NWSProductsSource(BASE, "ua", ["GRR"], ["HWO"], interval=0, session=sess,
+                            rule_offices=lambda: ["bou", "KLIX", "SPC", "SWPC"])
+    got = src.poll()
+    assert sorted((a.office, a.params["productCode"]) for a in got) == [("BOU", "AFD"), ("BOU", "PNS"), ("LIX", "AFD")]
+    assert "/products?office=KSPC&limit=50" not in sess.calls
+
+
+def test_rule_offices_reads_rules_and_groups(tmp_path):
+    from stormify.db import Database
+    from stormify.poller import rule_offices
+    db = Database(str(tmp_path / "t.db"))
+    uid = db.create_user("scott", None, {"office_groups": {"home": ["BOU", "GJT"]}})
+    db.replace_rules(uid, [{"name": "a", "scope": {"offices": ["lix"]}},
+                           {"name": "b", "scope": {"groups": ["home"]}},
+                           {"name": "off", "enabled": False, "scope": {"offices": ["OUN"]}}])
+    assert rule_offices(db) == ["BOU", "GJT", "LIX"]

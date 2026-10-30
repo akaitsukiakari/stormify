@@ -66,6 +66,8 @@ class Config:
     products_locations: list = field(default_factory=list)
     products_types: list = field(default_factory=list)
     products_interval: int = 300
+    # Text products at all. When on, offices named in your rules get every product they issue.
+    products_enabled: bool = True
     # National products not tied to an office: "TYPE" or "TYPE/LOCATION" (AWIPS). [] = off.
     products_national: list = field(default_factory=lambda: list(DEFAULT_NATIONAL))
     extra: dict = field(default_factory=dict)
@@ -98,6 +100,8 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
             cfg.products_locations = list(products.get("offices", []))
             cfg.products_types = list(products.get("types", []))
             cfg.products_interval = int(products.get("poll_interval", cfg.products_interval))
+            if "enabled" in products:
+                cfg.products_enabled = bool(products["enabled"])
             if "national" in products:
                 cfg.products_national = list(products["national"])
     if not cfg.secret_key:

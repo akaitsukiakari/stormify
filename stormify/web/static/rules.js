@@ -86,7 +86,7 @@
     Statement: "Special weather statements, flood statements, follow-ups to warnings, SWPC summaries.",
     Outlook: "All SPC outlooks (convective, tornado, hail, wind, Day 3-8 severe, fire weather) and NHC tropical weather outlooks.",
     Discussion: "SPC mesoscale discussions.",
-    Product: "NWS text products: AFD, HWO, PNS and the rest from the offices in [nws_products] in config.toml (types = [\"*\"] for every kind), plus SPC watch text, SPC fire weather discussions, WPC MPDs and tsunami messages nationwide.",
+    Product: "NWS text products: AFD, HWO, PNS and the rest from every office your rules name, plus SPC watch text, SPC fire weather discussions, WPC MPDs and tsunami messages nationwide.",
     Message: "Messages that aren't a watch or warning, like Civil Emergency Messages and new kinds of SWPC messages.",
     Other: "Anything else, like NHC updates and discussions.",
   };

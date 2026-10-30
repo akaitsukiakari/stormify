@@ -283,7 +283,7 @@ def test_poller_includes_nhc_unless_disabled(tmp_path):
     from stormify.poller import Poller
     db = Database(str(tmp_path / "p.db"))
     assert [s.name for s in Poller(Config(), db).sources] == ["nws", "nws-products", "nhc", "spc", "swpc"]
-    off = Config(nhc_enabled=False, spc_enabled=False, swpc_enabled=False, products_national=[])
+    off = Config(nhc_enabled=False, spc_enabled=False, swpc_enabled=False, products_enabled=False)
     assert [s.name for s in Poller(off, db).sources] == ["nws"]
 
 
