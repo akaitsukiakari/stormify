@@ -16,6 +16,7 @@ from .. import __version__, images
 from ..config import Config, cache_dir
 from ..db import Database
 from ..delivery import DeliveryError, Notification, channels_for_user
+from ..engine import Engine
 from ..health import health
 from ..models import Alert
 from ..rules import RuleError, clean_groups, evaluate, load_rules
@@ -27,6 +28,8 @@ from ..zones import ZoneShapes, pending_from_alert
 FEED_LIMIT = 2000
 # Alerts a rule preview runs over (each needs its full text parsed, which is slow on a Pi Zero).
 PREVIEW_LIMIT = 1500
+MATCH_DAYS = 14        # how far back "recent matches" looks
+MATCH_SCAN = 20000     # most archived alerts it reads doing so
 
 
 def create_app(cfg: Config, db: Database) -> Flask:
@@ -278,6 +281,109 @@ def create_app(cfg: Config, db: Database) -> Flask:
             p["events"] = sorted(p["events"].items(), key=lambda kv: -kv[1])[:5]
         return jsonify(alerts=len(rows), hours=hours, pushes=pushes, rules=per,
                        truncated=len(rows) >= PREVIEW_LIMIT)
+
+    # ---- one rule: recent matches and test pushes -----------------------------
+    def _one_rule(payload: dict, user: dict):
+        r = payload.get("rule")
+        if not isinstance(r, dict):
+            raise RuleError("expected {\"rule\": {...}}")
+        r = {k: v for k, v in r.items() if k != "id"}
+        r["enabled"] = True  # a rule that's switched off still gets tested
+        return load_rules([r], payload.get("office_groups") or user["settings"].get("office_groups"))[0]
+
+    def _send(user: dict, n: Notification):
+        channels = channels_for_user(user["settings"])
+        if not channels:
+            return jsonify(error="No delivery channel configured. Set up ntfy first."), 400
+        errors = []
+        for ch in channels:
+            try:
+                ch.send(n)
+                db.record_delivery(user["id"], None, None, ch.name, "test")
+            except DeliveryError as e:
+                errors.append(f"{ch.name}: {e}")
+        if errors:
+            return jsonify(error="; ".join(errors)), 502
+        return jsonify(ok=True, title=n.title, body=n.body)
+
+    def _test_notification(user: dict, rule, a: Alert) -> Notification:
+        n = Engine(db, cfg).build_notification(a, rule, user, "TEST", rule.priority)
+        n.is_test = True
+        return n
+
+    def _matches(user: dict, rule, limit: int):
+        since = (datetime.now(timezone.utc) - timedelta(days=MATCH_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        out, scanned = [], 0
+        pre = lambda event, kind, tags: rule.matches_product(Alert(id="", source="", event=event, kind=kind, tags=tags))
+        for a, first_seen in db.iter_alerts(since, MATCH_SCAN, pre):
+            scanned += 1
+            if a is None or not (rule.matches_product(a) and rule.matches_scope(a)):
+                continue
+            ok, why = rule.passes_filters(a)
+            out.append((a, first_seen, "" if ok else why))
+            if len(out) >= limit:
+                break
+        return out, scanned
+
+    @app.route("/api/rules/matches", methods=["POST"])
+    @login_required
+    def api_rule_matches(user):
+        """The newest archived alerts one (draft) rule matches, with the push each would send."""
+        payload = request.get_json(silent=True) or {}
+        try:
+            rule = _one_rule(payload, user)
+        except (RuleError, TypeError, AttributeError) as e:
+            return jsonify(error=str(e)), 400
+        limit = max(1, min(int(payload.get("limit") or 40), 100))
+        found, scanned = _matches(user, rule, limit)
+        eng = Engine(db, cfg)
+        rows = []
+        for a, first_seen, filtered in found:
+            n = eng.build_notification(a, rule, user, "", rule.priority)
+            rows.append({"id": a.id, "event": a.event, "office": a.office, "kind": a.kind, "sent": a.sent,
+                         "first_seen": first_seen, "cancel": a.is_cancel, "filtered": filtered,
+                         "title": n.title, "body": n.body})
+        return jsonify(matches=rows, scanned=scanned, days=MATCH_DAYS, action=rule.action,
+                       truncated=scanned >= MATCH_SCAN)
+
+    @app.route("/api/rules/test-push", methods=["POST"])
+    @login_required
+    def api_rule_test_push(user):
+        """Push one alert to the phone the way this rule would format it (marked TEST).
+
+        Without an alert id it uses the rule's newest match, or a made-up sample if nothing matches yet."""
+        payload = request.get_json(silent=True) or {}
+        try:
+            rule = _one_rule(payload, user)
+        except (RuleError, TypeError, AttributeError) as e:
+            return jsonify(error=str(e)), 400
+        a = None
+        sample = False
+        if payload.get("alert_id"):
+            a = db.get_alert(str(payload["alert_id"]))
+            if not a:
+                return jsonify(error="That alert isn't in the archive any more."), 404
+        else:
+            found, _ = _matches(user, rule, 1)
+            if found:
+                a = found[0][0]
+        if a is None:
+            sample = True
+            offices = list(rule.scope.get("offices") or []) + sorted(rule.group_offices)
+            office = str(offices[0]).upper() if offices else "BOU"
+            event = rule.events[0] if rule.events else "Sample Alert"
+            a = Alert(id="stormify:test-sample", source="test", event=event,
+                      headline=f"Sample {event}", office=office, area_desc="Sample County",
+                      nws_headline="Nothing has matched this rule yet, so this is a made-up sample.",
+                      sent=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                      expires=(datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                      kind="Other", tags=sorted(rule.tags_any))
+        res = _send(user, _test_notification(user, rule, a))
+        if isinstance(res, tuple):
+            return res
+        body = res.get_json()
+        body.update(sample=sample, alert_id=None if sample else a.id, event=a.event)
+        return jsonify(body)
 
     # ---- settings ------------------------------------------------------------
     @app.route("/api/settings", methods=["GET", "PUT"])

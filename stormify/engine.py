@@ -96,6 +96,8 @@ class Engine:
         default_title, default_body = SOURCE_DEFAULTS.get(a.source, (DEFAULT_TITLE, DEFAULT_BODY))
         if a.kind == "Product" and a.source not in SOURCE_DEFAULTS:
             default_body = PRODUCT_BODY
+        if a.params.get("text_product"):  # SWPC's forecasts and discussions: no scale or expiry
+            default_body = PRODUCT_BODY
         title = render((rule.title_template if rule else None) or default_title, v)
         body = render((rule.body_template if rule else None) or default_body, v)
         if "emergency" in a.tag_set:

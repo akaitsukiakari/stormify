@@ -41,6 +41,8 @@ spc_mds = true
 # Space Weather Prediction Center watches, warnings and alerts (G, S and R scales).
 # Push with a rule like "tags_any": ["g3", "g4", "g5"], "scope": {"offices": ["SWPC"]}.
 swpc_enabled = true
+# Also SWPC's forecast discussion, 3-day and 27-day outlooks, weekly highlights and advisory outlook.
+swpc_text_products = true
 
 # Draw alerts that only list zones (most watches and advisories) by looking up each zone's
 # outline once. This many lookups per poll, so a big watch fills in over a minute or two.
@@ -65,8 +67,14 @@ map_key = ""
 # NWS text products (Area Forecast Discussion, Hazardous Weather Outlook, Record Event
 # Report, ...). These aren't alerts, so the alerts feed never carries them. They land on
 # the dashboard under the "Product" chip; add a rule with "kinds": ["Product"] to push them.
-# Leave offices empty to turn this off.
+# Every office named in your rules (directly or through an office group) gets every product it
+# issues, with nothing to set here. List extra offices below only to pull products from offices
+# no rule names yet; those get `types`. enabled = false turns all text products off.
 [nws_products]
-offices = []                                  # e.g. ["BOU"]
-types = ["AFD", "HWO", "RER", "PNS", "LSR"]   # AWIPS product codes
+offices = []                                  # e.g. ["PUB"]
+types = ["AFD", "HWO", "RER", "PNS", "LSR"]   # AWIPS product codes, or ["*"] for every product
 poll_interval = 300                           # seconds; products change slowly
+# National products not tied to an office, as "TYPE" or "TYPE/LOCATION". The default is SPC watch
+# text and probabilities, SPC fire weather and Day 4-8 discussions, WPC Mesoscale Precipitation
+# Discussions, and tsunami messages and bulletins. [] turns them off.
+# national = ["SEL", "WWP", "FWD", "SWO/D48", "FFG/MPD", "TSU", "TIB"]

@@ -42,4 +42,7 @@ window.STORMIFY_OFFICES = {
   CPHC: "Central Pacific Hurricane Center", WNH: "Weather Prediction Center",
   AAQ: "National Tsunami Warning Center", HEB: "Pacific Tsunami Warning Center",
   SWPC: "Space Weather Prediction Center",
+  WPC: "Weather Prediction Center",
+  NTWC: "National Tsunami Warning Center",
+  PTWC: "Pacific Tsunami Warning Center",
 };

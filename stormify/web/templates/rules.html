@@ -70,7 +70,7 @@
         <li>A rule matches an alert when <b>Which products</b> and <b>Where</b> both fit. Leave a box empty to mean "any".</li>
         <li><b>Text filters</b> narrow it down after that. An alert that matches a rule but fails its filters goes to the dashboard, with the reason in the feed.</li>
         <li>If several rules match, you get <b>one</b> push, at the loudest matching rule's loudness. "Dashboard only" rules never push, so use them to keep things quiet on purpose.</li>
-        <li>Nothing changes until you press <b>Save</b>. <b>Check against the last 48 h</b> shows what each rule would have pushed.</li>
+        <li>Nothing changes until you press <b>Save</b>. <b>Check against the last 48 h</b> shows what each rule would have pushed. In a rule's editor, <b>Try it</b> sends a test push and lists what the rule matched in the last two weeks.</li>
       </ol>
       <p class="muted small">Hover or tap a <span class="tip-sample">?</span> next to any box for what it does. Start from a recipe:</p>
       <div class="starters">
@@ -88,7 +88,14 @@
     <button id="preview" title="Run these rules over the alerts from the last 48 hours">Check against the last 48 h</button>
     <label class="ghost file">Import JSON<input type="file" id="import" accept=".json,application/json" hidden></label>
     <a class="ghost" href="/api/rules?download=1">Export JSON</a>
+    <button id="wipe" class="danger" title="Delete every rule and start over">Delete all rules…</button>
     <span class="muted small" id="preview-note"></span>
+  </div>
+  <div class="wipe-box" id="wipe-box" hidden>
+    <p><b>Delete all <span id="wipe-count"></span>?</b> This happens right away and can't be undone here. <a href="/api/rules?download=1">Export JSON</a> first if you might want them back.</p>
+    <label>Type <b>confirm</b> to delete them <input id="wipe-word" autocomplete="off" spellcheck="false" placeholder="confirm"></label>
+    <button class="danger" id="wipe-ok" disabled>Delete all rules</button>
+    <button id="wipe-cancel">Cancel</button>
   </div>
   <div id="rule-list"></div>
 </section>
