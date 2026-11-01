@@ -735,6 +735,12 @@
   });
   let debounce;
   const reload = () => load(true);
+  // "Active only" starts on (less to load on the Pi) and then remembers your last choice. An alert
+  // opened from a notification still shows when it has expired: the server adds the ?alert= one.
+  try { $("f-active").checked = localStorage.getItem("activeOnly") !== "0"; } catch { $("f-active").checked = true; }
+  $("f-active").addEventListener("change", () => {
+    try { localStorage.setItem("activeOnly", $("f-active").checked ? "1" : "0"); } catch { /* ignore */ }
+  });
   ["f-hours", "f-action", "f-active"].forEach((id) => $(id).addEventListener("change", reload));
   const later = () => { clearTimeout(debounce); debounce = setTimeout(reload, 350); };
   $("f-q").addEventListener("input", later);

@@ -274,3 +274,12 @@ def test_delete_all_rules(client, db):
     assert client.get("/api/rules").json["rules"]
     assert client.put("/api/rules", json={"rules": []}).json["count"] == 0
     assert client.get("/api/rules").json["rules"] == []
+
+
+def test_active_only_still_includes_the_opened_alert(client):
+    login(client)
+    every = client.get("/api/alerts?hours=0&lite=1").json["alerts"]
+    active = {a["id"] for a in client.get("/api/alerts?hours=0&lite=1&active=1").json["alerts"]}
+    expired = next(a["id"] for a in every if a["id"] not in active)
+    got = client.get(f"/api/alerts?hours=0&lite=1&active=1&id={expired}").json["alerts"]
+    assert got[0]["id"] == expired
