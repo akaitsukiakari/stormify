@@ -69,6 +69,9 @@
   const bodies = new Map();  // alert id -> full text, fetched when a card or sheet opens
   const mobile = window.matchMedia("(max-width: 900px)");
   let selected = new URLSearchParams(location.search).get("alert");
+  // Opened from a notification (?alert=): once the first load lands, bring that alert up front
+  // instead of leaving it somewhere down the list under the map.
+  let deepLink = selected;
   const activeKinds = new Set();
   const layers = new Map();
   // Alert types switched off from the legend, by legend key; remembered between visits.
@@ -307,6 +310,7 @@
         loadedOnce = true;
         render();
       }
+      if (deepLink) showDeepLink();
       $("updated").textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       loadFailed = false;
     } catch (e) {
@@ -574,6 +578,16 @@
   function mapTap(a) {
     if (!mobile.matches) { select(a.id, false); return; }
     openSheet(a, "Tapped on the map");
+  }
+
+  function showDeepLink() {
+    const id = deepLink;
+    deepLink = null;
+    const a = alerts.find((x) => x.id === id);
+    if (!a) { toast("That alert is no longer on file."); return; }
+    if (mobile.matches) { openSheet(a, "From your notification"); return; }
+    const card = document.querySelector(`#list .card[data-id="${CSS.escape(id)}"]`);
+    if (card) card.scrollIntoView({ block: "start" });
   }
 
   // Phone: the map (42vh) sits on top and the sheet (50vh) below it, so the polygon stays in view.
