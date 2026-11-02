@@ -180,3 +180,9 @@ details summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 .wipe-box { margin: 8px 0; padding: 10px; border: 1px solid var(--bad); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .wipe-box p { margin: 0; flex-basis: 100%; }
 .wipe-box input { width: 9em; }
+
+/* Rules as text */
+.text-box { margin: 8px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.text-box p { margin: 0 0 6px; }
+.text-box textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.text-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }

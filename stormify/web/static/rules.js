@@ -862,6 +862,41 @@
     }
   });
 
+  // ---- rules as text: copy out, paste in ---------------------------------------------------------
+  const textBox = $("text-box"), textArea = $("text-rules"), textNote = $("text-note");
+  const rulesText = () => JSON.stringify({ stormify_rules: 1, rules: rules.map(cleanRule) }, null, 2);
+  $("text-open").addEventListener("click", () => {
+    textBox.hidden = !textBox.hidden;
+    if (!textBox.hidden) { textArea.value = rulesText(); textNote.textContent = ""; }
+  });
+  $("text-close").addEventListener("click", () => { textBox.hidden = true; });
+  $("text-reset").addEventListener("click", () => { textArea.value = rulesText(); textNote.textContent = ""; });
+  $("text-copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(textArea.value); textNote.textContent = "Copied."; }
+    catch { textArea.select(); document.execCommand("copy"); textNote.textContent = "Copied."; }
+  });
+  function pastedRules() {
+    const raw = textArea.value.trim();
+    if (!raw) throw new Error("the box is empty");
+    let data;
+    try { data = JSON.parse(raw); } catch (e) { throw new Error("that isn't valid rule text (" + e.message + ")"); }
+    const list = Array.isArray(data) ? data : Array.isArray(data.rules) ? data.rules : data && data.name ? [data] : null;
+    if (!list || !list.length) throw new Error("no rules found in it");
+    if (list.some((r) => !r || typeof r !== "object" || !r.name)) throw new Error("every rule needs a name");
+    return list.map((r) => withUid(clone(r)));
+  }
+  for (const [id, replace] of [["text-add", false], ["text-replace", true]]) {
+    $(id).addEventListener("click", () => {
+      try {
+        const added = pastedRules();
+        if (replace && rules.length && !confirm(`Replace your ${rules.length} rules with the ${added.length} pasted ones?`)) return;
+        rules = replace ? added : [...rules, ...added];
+        setDirty(); previews.clear(); renderRules();
+        textNote.textContent = `${replace ? "Replaced with" : "Added"} ${added.length} rule${added.length === 1 ? "" : "s"}. Press Save to keep them.`;
+      } catch (err) { textNote.textContent = "Couldn't use it: " + err.message; }
+    });
+  }
+
   // ---- import ---------------------------------------------------------------------------------------
   $("import").addEventListener("change", async (e) => {
     const file = e.target.files[0];
