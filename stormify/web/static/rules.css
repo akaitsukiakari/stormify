@@ -180,3 +180,19 @@ details summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 .wipe-box { margin: 8px 0; padding: 10px; border: 1px solid var(--bad); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .wipe-box p { margin: 0; flex-basis: 100%; }
 .wipe-box input { width: 9em; }
+
+/* Rules as text */
+.text-box { margin: 8px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.text-box p { margin: 0 0 6px; }
+.text-box textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.text-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+
+/* Checkbox list of products in the rule editor */
+.picker { margin: 4px 0 8px; }
+.picker summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.picker-find { width: 100%; box-sizing: border-box; margin: 6px 0; }
+.picker-list { max-height: 360px; overflow-y: auto; columns: 2 260px; column-gap: 16px; }
+.picker-list fieldset { break-inside: avoid; margin: 0 0 8px; }
+.picker-list legend { font-size: 12px; }
+.picker-list label.check { display: block; font-size: 13px; }
+button.link { background: none; border: 0; padding: 0 2px; color: var(--accent); cursor: pointer; font-size: 12px; }

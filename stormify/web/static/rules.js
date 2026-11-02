@@ -375,7 +375,8 @@
     };
     chips.addEventListener("click", (e) => {
       const b = e.target.closest("button[data-i]");
-      if (b) { items.splice(+b.dataset.i, 1); change(); }
+      // The box sits inside a <label>, which would replay the click on its first button.
+      if (b) { e.preventDefault(); items.splice(+b.dataset.i, 1); change(); }
     });
     input.addEventListener("input", show);
     input.addEventListener("focus", show);
@@ -497,6 +498,10 @@
 
         <fieldset class="wide"><legend>Which products</legend>
           <label><span>Event names <span class="muted small">(empty = any)</span> ${tip("events")}</span><div data-chip="events"></div></label>
+          <details class="picker"><summary>Pick from a list</summary>
+            <input type="search" class="picker-find" placeholder="Filter the list (tornado, SPC, space…)" autocomplete="off">
+            <div class="picker-list"></div>
+          </details>
           <div class="kinds">Or any of these kinds ${tip("kinds")}
             ${KINDS.map((k) => `<button type="button" class="chip ${(r.kinds || []).includes(k) ? "on" : ""}" data-kind="${k}">${k}</button>`).join("")}
           </div>
@@ -608,9 +613,48 @@
       touched();
     });
     const chip = (name, target, key, opts) => chipbox(el.querySelector(`[data-chip="${name}"]`), target[key], {
-      ...opts, onChange: (v) => { target[key] = v; touched(); },
+      ...opts, onChange: (v) => { target[key] = v; touched(); opts.changed && opts.changed(v); },
     });
-    chip("events", r, "events", { suggest: eventSuggest, placeholder: "Tornado Warning…" });
+    let drawPicker = () => {};
+    const evChips = chip("events", r, "events", { suggest: eventSuggest, placeholder: "Tornado Warning…",
+      changed: () => { if (picker.open) drawPicker(); } });
+    // Checkbox list of every known product, grouped by where it comes from; kept in step with the chips.
+    const picker = el.querySelector(".picker"), pickList = picker.querySelector(".picker-list");
+    drawPicker = () => {
+      const q = picker.querySelector(".picker-find").value.trim().toLowerCase();
+      const on = new Set((r.events || []).map((e) => e.toLowerCase()));
+      const groups = new Map();
+      for (const e of uniq([...EVENT_CATALOG, ...(meta.events || []), ...(r.events || [])]).sort()) {
+        const src = sourceOf(e);
+        if (q && !`${e} ${src} ${kindOf(e)}`.toLowerCase().includes(q)) continue;
+        if (!groups.has(src)) groups.set(src, []);
+        groups.get(src).push(e);
+      }
+      pickList.innerHTML = [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([src, evs]) => `
+        <fieldset><legend>${esc(src)} <button type="button" class="link" data-all="${esc(src)}">all</button> <button type="button" class="link" data-none="${esc(src)}">none</button></legend>
+          ${evs.map((e) => `<label class="check"><input type="checkbox" data-ev="${esc(e)}" ${on.has(e.toLowerCase()) ? "checked" : ""}> ${esc(e)}</label>`).join("")}
+        </fieldset>`).join("") || `<div class="muted small">Nothing matches.</div>`;
+    };
+    const setEvents = (evs) => { r.events = evs; evChips.set(evs); touched(); };
+    picker.addEventListener("toggle", () => { if (picker.open) drawPicker(); });
+    picker.querySelector(".picker-find").addEventListener("input", drawPicker);
+    pickList.addEventListener("change", (e) => {
+      const ev = e.target.dataset.ev;
+      if (!ev) return;
+      const rest = (r.events || []).filter((x) => x.toLowerCase() !== ev.toLowerCase());
+      setEvents(e.target.checked ? [...rest, ev] : rest);
+    });
+    pickList.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-all], button[data-none]");
+      if (!b) return;
+      const fs = b.closest("fieldset");
+      const evs = [...fs.querySelectorAll("[data-ev]")].map((x) => x.dataset.ev);
+      const lower = new Set(evs.map((x) => x.toLowerCase()));
+      const rest = (r.events || []).filter((x) => !lower.has(x.toLowerCase()));
+      setEvents(b.dataset.all ? [...rest, ...evs] : rest);
+      drawPicker();
+    });
+
     chip("tags_any", r, "tags_any", { suggest: tagSuggest, normalize: (v) => v.trim().toLowerCase(), placeholder: "pds, g3…" });
     chip("offices", s, "offices", { suggest: officeSuggest, normalize: normOffice, placeholder: "BOU, Denver…", labelOf: officeLabel });
     chip("states", s, "states", { normalize: (v) => v.trim().toUpperCase().slice(0, 2), placeholder: "CO" });
@@ -861,6 +905,41 @@
       if (e.message !== "login") banner("Not deleted: " + e.message);
     }
   });
+
+  // ---- rules as text: copy out, paste in ---------------------------------------------------------
+  const textBox = $("text-box"), textArea = $("text-rules"), textNote = $("text-note");
+  const rulesText = () => JSON.stringify({ stormify_rules: 1, rules: rules.map(cleanRule) }, null, 2);
+  $("text-open").addEventListener("click", () => {
+    textBox.hidden = !textBox.hidden;
+    if (!textBox.hidden) { textArea.value = rulesText(); textNote.textContent = ""; }
+  });
+  $("text-close").addEventListener("click", () => { textBox.hidden = true; });
+  $("text-reset").addEventListener("click", () => { textArea.value = rulesText(); textNote.textContent = ""; });
+  $("text-copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(textArea.value); textNote.textContent = "Copied."; }
+    catch { textArea.select(); document.execCommand("copy"); textNote.textContent = "Copied."; }
+  });
+  function pastedRules() {
+    const raw = textArea.value.trim();
+    if (!raw) throw new Error("the box is empty");
+    let data;
+    try { data = JSON.parse(raw); } catch (e) { throw new Error("that isn't valid rule text (" + e.message + ")"); }
+    const list = Array.isArray(data) ? data : Array.isArray(data.rules) ? data.rules : data && data.name ? [data] : null;
+    if (!list || !list.length) throw new Error("no rules found in it");
+    if (list.some((r) => !r || typeof r !== "object" || !r.name)) throw new Error("every rule needs a name");
+    return list.map((r) => withUid(clone(r)));
+  }
+  for (const [id, replace] of [["text-add", false], ["text-replace", true]]) {
+    $(id).addEventListener("click", () => {
+      try {
+        const added = pastedRules();
+        if (replace && rules.length && !confirm(`Replace your ${rules.length} rules with the ${added.length} pasted ones?`)) return;
+        rules = replace ? added : [...rules, ...added];
+        setDirty(); previews.clear(); renderRules();
+        textNote.textContent = `${replace ? "Replaced with" : "Added"} ${added.length} rule${added.length === 1 ? "" : "s"}. Press Save to keep them.`;
+      } catch (err) { textNote.textContent = "Couldn't use it: " + err.message; }
+    });
+  }
 
   // ---- import ---------------------------------------------------------------------------------------
   $("import").addEventListener("change", async (e) => {
