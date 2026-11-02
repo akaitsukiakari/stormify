@@ -34,6 +34,8 @@ DEFAULT_TITLE = "{status_prefix}{tags_prefix}{event} · {office}"
 DEFAULT_BODY = "{threat}{area_short}\nUntil {expires}\n{nws_headline}"
 # Text products (AFD, HWO, ...) have no area or expiry.
 PRODUCT_BODY = "{headline}\nIssued {sent}"
+# Daily climate reports (CLI): the high/low/precip summary first.
+CLIMATE_BODY = "{nws_headline}\n{headline}"
 NHC_TITLE = "{storm} · {product}"
 NHC_BODY = "{storm_stats}\n{watches}\n{nws_headline}"
 SPC_TITLE = "{status_prefix}{headline}"

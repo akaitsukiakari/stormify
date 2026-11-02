@@ -27,6 +27,7 @@ from typing import Callable
 
 import requests
 
+from .. import climate
 from ..models import Alert
 from .base import Source
 
@@ -96,11 +97,14 @@ def parse_product(p: dict, location: str = "") -> Alert:
     sent = p.get("issuanceTime") or ""
     label = awips or (f"{code}{office}" if code else "")
     tags = ["pds"] if PDS_RE.search(text) else []
+    # Daily climate reports get a one-line summary (high, low, precip, snow) for the push and feed.
+    nws_headline = climate.summary(text) if awips.startswith("CLI") and len(awips) == 6 else ""
     return Alert(
         id=pid,
         source="nws-product",
         event=name,
         headline=f"{name} ({label})" if label else name,
+        nws_headline=nws_headline,
         description=(p.get("productText") or "").strip("\n"),
         office=office,
         sender_name=_issuer(p.get("issuingOffice", "")),
@@ -111,7 +115,8 @@ def parse_product(p: dict, location: str = "") -> Alert:
         kind=PRODUCT_KIND,
         url=url,
         tags=tags,
-        params={"productCode": code, "wmoCollectiveId": p.get("wmoCollectiveId", ""), "awipsId": awips},
+        params={"productCode": code, "wmoCollectiveId": p.get("wmoCollectiveId", ""), "awipsId": awips,
+                "issuingOffice": (p.get("issuingOffice") or "").upper()},
     )
 
 

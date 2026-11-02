@@ -131,6 +131,17 @@ Turn it off with `spc_enabled = false`, or narrow it with `spc_outlook_days = [1
 
 On by default (`national` under `[nws_products]`), with the office of the center that issued them: SPC watch text (`SPC Watch Text`, tagged `pds` when it says so), `SPC Watch Probabilities`, `SPC Day 1/2/3-8 Fire Weather Outlook Discussion`, `SPC Day 4-8 Convective Outlook Discussion`, `WPC Mesoscale Precipitation Discussion` (office `WPC`), and tsunami messages and bulletins (offices `NTWC` and `PTWC`; tsunami warnings, watches and advisories for US coasts also come through the alerts feed). All of these are kind `Product`. Any office a turned-on rule names (directly or through an office group) gets every product it issues: AFD, HWO, PNS, SPS and the rest. There's nothing to configure.
 
+## Daily climate reports
+
+Offices issue a daily climate report (CLI) for each of their climate stations, early in the morning for yesterday and late in the afternoon for today so far. They come in like any other product from an office a rule names. Stormify reads the high, low, precipitation and snowfall into a one-line summary (`nws_headline`, e.g. `Denver CO, Nov 1: High 68 · Low 35 · Precip 0.00" · Snow 0.0"`), which is the default push body, and attaches the Iowa Environmental Mesonet's infographic of the report (the picture IEMBOT posts). The picture loads straight from IEM, on the phone and in the opened card on the dashboard, so the Pi doesn't draw it and it doesn't need `public_url`. `notification_images = false` turns it off along with the maps.
+
+To push just these, match on the report's id, which is in its headline (e.g. `Climatological Report (Daily) (CLIDEN)` for Denver):
+
+```json
+{"name": "Denver climate report", "kinds": ["Product"], "scope": {"offices": ["BOU"]},
+ "filters": {"include_any": ["(CLIDEN)"]}, "priority": 2}
+```
+
 ## Space weather (SWPC)
 
 Space Weather Prediction Center messages have office `SWPC`. The event says what and how sure: `Geomagnetic Storm Watch` (predicted), `Geomagnetic Storm Warning` (expected soon), `Geomagnetic Storm Alert` (reached; tagged `observed`), `… Summary`, and the same for `Solar Radiation Storm` and `Radio Blackout`. K-index warnings below storm level are `Geomagnetic Warning`. Extended warnings thread with the original, and cancellations cancel it.
