@@ -9,11 +9,11 @@ from urllib.parse import quote
 
 from .config import Config
 from .db import Database, utcnow
-from . import images
+from . import climate, images
 from .delivery import Channel, DeliveryError, Notification, channels_for_user
 from .models import SIGNIFICANT_TAGS, Alert
 from .rules import Rule, RuleError, evaluate, load_rules
-from .templates import DEFAULT_BODY, DEFAULT_TITLE, PRODUCT_BODY, SOURCE_DEFAULTS, build_vars, render
+from .templates import CLIMATE_BODY, DEFAULT_BODY, DEFAULT_TITLE, PRODUCT_BODY, SOURCE_DEFAULTS, build_vars, render
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class Engine:
         v = build_vars(a, settings.get("timezone", "America/Denver"), settings.get("time_display"), status)
         default_title, default_body = SOURCE_DEFAULTS.get(a.source, (DEFAULT_TITLE, DEFAULT_BODY))
         if a.kind == "Product" and a.source not in SOURCE_DEFAULTS:
-            default_body = PRODUCT_BODY
+            default_body = CLIMATE_BODY if a.nws_headline and climate.is_cli(a) else PRODUCT_BODY
         if a.params.get("text_product"):  # SWPC's forecasts and discussions: no scale or expiry
             default_body = PRODUCT_BODY
         title = render((rule.title_template if rule else None) or default_title, v)
@@ -104,12 +104,16 @@ class Engine:
             priority = 5
         base = self.cfg.public_url.rstrip("/")
         click = f"{base}/?alert={quote(a.id, safe='')}" if base else None
-        image = None
+        image, image_name = None, "map.png"
         # The phone fetches the picture from the dashboard, so it needs a public address to reach.
         if (base and self.cfg.notification_images and status != "CANCELLED"
                 and images.available() and images.drawable(a)):
             image = f"{base}/img/{self.db.image_token(a.id)}.png"
+        # A daily climate report gets IEM's infographic (what IEMBOT posts), linked straight from IEM.
+        if self.cfg.notification_images and climate.is_cli(a):
+            image, image_name = climate.image_url(a), "climate.png"
         return Notification(title=title, body=body, priority=priority, click_url=click, image_url=image,
+                            image_name=image_name,
                             group=a.thread_key, is_test="test" in a.tag_set,
                             tags=[t for t in a.tags if t != "test"])
 

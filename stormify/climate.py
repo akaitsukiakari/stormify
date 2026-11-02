@@ -1,0 +1,142 @@
+"""Daily climate reports (NWS CLI products): a one-line summary and IEM's infographic.
+
+Offices issue a CLI for each of their climate stations twice a day: early morning for
+yesterday, and late afternoon for today so far. The Iowa Environmental Mesonet parses
+every CLI and draws an infographic of it (autoplot 218), which is the picture IEMBOT
+posts. Stormify links that picture straight from IEM, so the Pi never draws or stores it:
+ntfy hands the link to the phone, and the dashboard shows it in the opened card.
+
+The station id and date follow pyIEM's own CLI parser (source letter + the AWIPS id's
+last three letters, e.g. KBOU + CLIDEN -> KDEN; the date from the report's headline).
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import date, datetime, timezone
+
+from .models import Alert
+
+IEM_PLOT = "https://mesonet.agron.iastate.edu/plotting/auto/plot/218/network:NWSCLI::station:{station}::date:{day}::_:{pid}.png"
+
+HEADLINE_RE = re.compile(
+    r"\.\.\.THE ([A-Z_.\-()/,\s]+?) CLIMATE SUMMARY (?:FOR|FROM)\s+([A-Z]+\s[0-9]+\s+[0-9]{4})(?: CORRECTION)?\.\.\.")
+# pyIEM's one hard-coded station: Dodge City's report comes as CLIDGC.
+HARDCODED = {"DGC": "KDDC"}
+NUM = r"(-?\d+(?:\.\d+)?|T|MM)R?"
+
+
+def is_cli(a: Alert) -> bool:
+    awips = (a.params or {}).get("awipsId") or ""
+    return a.source == "nws-product" and len(awips) == 6 and awips.startswith("CLI")
+
+
+def _flat(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").replace("\r", ""))
+
+
+def report_date(text: str) -> date | None:
+    m = HEADLINE_RE.search(_flat(text).upper())
+    if not m:
+        return None
+    raw = m.group(2).split()
+    fmt = "%b %d %Y" if len(raw[0]) == 3 else "%B %d %Y"
+    try:
+        return datetime.strptime(" ".join(raw), fmt).date()
+    except ValueError:
+        return None
+
+
+def station_name(text: str) -> str:
+    """'DENVER CO' -> 'Denver CO'."""
+    m = HEADLINE_RE.search(_flat(text).upper())
+    if not m:
+        return ""
+    words = m.group(1).strip().split()
+    out = [w.title() for w in words]
+    if len(words) > 1 and len(words[-1]) == 2:
+        out[-1] = words[-1]
+    return " ".join(out)
+
+
+def station_id(a: Alert) -> str:
+    awips = (a.params or {}).get("awipsId") or ""
+    loc = awips[3:]
+    if loc in HARDCODED:
+        return HARDCODED[loc]
+    source = ((a.params or {}).get("issuingOffice") or "").upper()
+    first = source[:1] or ("P" if (a.office or "") in {"AFC", "AFG", "AJK", "HFO", "GUM", "PPG"} else "K")
+    return first + loc
+
+
+def _section_value(lines: list[str], header: str, label_re: str) -> str | None:
+    """First value on a `label_re` line that follows a line starting with `header`."""
+    start = next((i for i, ln in enumerate(lines) if ln.strip().startswith(header)), None)
+    if start is None:
+        return None
+    rx = re.compile(rf"^\s*(?:{label_re})\s+{NUM}(?:\s|$)")
+    for ln in lines[start + 1:start + 12]:
+        if not ln.strip():
+            continue
+        if ln[:1].strip() and not ln.strip().startswith(("YESTERDAY", "TODAY")):
+            break  # the next section header
+        m = rx.match(ln)
+        if m:
+            return m.group(1)
+    return None
+
+
+def parse(text: str) -> dict:
+    """High, low, precipitation and snowfall for the report's day (strings, as printed)."""
+    lines = (text or "").replace("\r", "").upper().split("\n")
+    out = {
+        "high": _section_value(lines, "TEMPERATURE", "MAXIMUM"),
+        "low": _section_value(lines, "TEMPERATURE", "MINIMUM"),
+        "precip": _section_value(lines, "PRECIPITATION", "YESTERDAY|TODAY"),
+        "snow": _section_value(lines, "SNOWFALL", "YESTERDAY|TODAY"),
+    }
+    flat = _flat(text).upper()
+    out["partial"] = bool(re.search(r"VALID (?:TODAY )?AS OF", flat)) or bool(
+        re.search(r"^\s*TODAY\s*$", (text or "").upper(), re.M))
+    return out
+
+
+def summary(text: str) -> str:
+    """'Denver CO, Nov 1: High 68 · Low 35 · Precip 0.00" · Snow 0.0"' (empty if it can't be read)."""
+    day = report_date(text)
+    if not day:
+        return ""
+    v = parse(text)
+    bits = []
+    if v["high"] and v["high"] != "MM":
+        bits.append(f"High {v['high']}")
+    if v["low"] and v["low"] != "MM":
+        bits.append(f"Low {v['low']}")
+    if v["precip"] and v["precip"] != "MM":
+        bits.append(f"Precip {v['precip']}" + ('"' if v["precip"] != "T" else ""))
+    if v["snow"] and v["snow"] not in ("MM",):
+        bits.append(f"Snow {v['snow']}" + ('"' if v["snow"] != "T" else ""))
+    name = station_name(text)
+    when = f"{day.strftime('%b')} {day.day}" + (" so far" if v["partial"] else "")
+    head = f"{name}, {when}" if name else when
+    return f"{head}: " + " · ".join(bits) if bits else head
+
+
+def image_url(a: Alert) -> str | None:
+    """IEM's infographic of a CLI report, or None for anything else."""
+    if not is_cli(a):
+        return None
+    day = report_date(a.description)
+    if not day:
+        return None
+    # IEM caches each picture by its URL. The afternoon "so far" report and next morning's final
+    # one share a station and date, so the product id keeps the morning's from showing the afternoon's.
+    try:
+        sent = datetime.fromisoformat((a.sent or "").replace("Z", "+00:00")).astimezone(timezone.utc)
+        stamp = sent.strftime("%Y%m%d%H%M")
+    except ValueError:
+        stamp = re.sub(r"\D", "", a.sent or "")[:12]
+    params = a.params or {}
+    pid = "-".join(x for x in (stamp, (params.get("issuingOffice") or "").upper(),
+                               params.get("wmoCollectiveId") or "", params["awipsId"]) if x)
+    return IEM_PLOT.format(station=station_id(a), day=day.isoformat(), pid=pid)

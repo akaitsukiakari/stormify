@@ -15,7 +15,8 @@ class Notification:
     priority: int = 3                 # 1 (min) .. 5 (urgent)
     tags: list[str] = field(default_factory=list)
     click_url: str | None = None      # opens when the notification is tapped
-    image_url: str | None = None      # map of the alert's shape (attached by ntfy)
+    image_url: str | None = None      # map of the alert's shape, or a climate report's infographic (attached by ntfy)
+    image_name: str = "map.png"
     group: str | None = None          # thread key, for channels that can group/replace
     is_test: bool = False
 

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
-from .. import __version__, images
+from .. import __version__, climate, images
 from ..config import Config, cache_dir
 from ..db import Database
 from ..delivery import DeliveryError, Notification, channels_for_user
@@ -210,7 +210,8 @@ def create_app(cfg: Config, db: Database) -> Flask:
         a = db.get_alert(request.args.get("id") or "")
         if not a:
             return jsonify(error="not found"), 404
-        return jsonify(alert=a.to_dict())
+        # A daily climate report's infographic, shown in the opened card (loaded straight from IEM).
+        return jsonify(alert=a.to_dict(), image=climate.image_url(a))
 
     @app.route("/api/meta")
     @login_required

@@ -67,6 +67,7 @@
   const LIST_PAGE = 100;
   let shown = LIST_PAGE;
   const bodies = new Map();  // alert id -> full text, fetched when a card or sheet opens
+  const pictures = new Map();  // alert id -> climate report infographic URL (IEM), from the same fetch
   const mobile = window.matchMedia("(max-width: 900px)");
   let selected = new URLSearchParams(location.search).get("alert");
   // Opened from a notification (?alert=): once the first load lands, bring that alert up front
@@ -541,8 +542,13 @@
       <div class="meta">${threat ? esc(threat) + " · " : ""}${esc(a.area_desc)}</div>
       <div class="times"><span class="muted">${esc(dayLabel(a.sent))}</span> ${esc(sent)}${exp ? ` <span class="muted">→ until</span> ${esc(exp)}` : ""}</div>
       ${a.reason ? `<div class="reason">${esc(a.reason)}</div>` : ""}
+      ${pictures.get(a.id) ? pictureHtml(pictures.get(a.id)) : ""}
       <pre>${bodies.has(a.id) ? esc(bodies.get(a.id)) : "Loading full text…"}</pre>
     </div>`;
+  }
+
+  function pictureHtml(url) {
+    return `<a class="picture" href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="Climate report infographic" loading="lazy"></a>`;
   }
 
   function renderList() {
@@ -562,7 +568,9 @@
       try {
         const r = await getJSON("/api/alert?id=" + encodeURIComponent(id));
         if (!r.ok) throw new Error("load");
-        const a = (await r.json()).alert;
+        const j = await r.json();
+        const a = j.alert;
+        if (j.image) pictures.set(id, j.image);
         bodies.set(id, [a.nws_headline, a.description, a.instruction].filter(Boolean).join("\n\n") || a.headline || "");
       } catch (e) {
         if (e.message === "login") return;
@@ -570,7 +578,10 @@
         return;
       }
     }
-    document.querySelectorAll(`[data-id="${CSS.escape(id)}"] pre`).forEach((el) => { el.textContent = bodies.get(id); });
+    document.querySelectorAll(`[data-id="${CSS.escape(id)}"] pre`).forEach((el) => {
+      el.textContent = bodies.get(id);
+      if (pictures.get(id) && !el.parentNode.querySelector(".picture")) el.insertAdjacentHTML("beforebegin", pictureHtml(pictures.get(id)));
+    });
   }
 
   // On a phone the list sits under the map, so a tap shows the alert in a sheet over the page
