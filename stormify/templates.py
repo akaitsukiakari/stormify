@@ -21,12 +21,15 @@ They have their own defaults (NHC_TITLE / NHC_BODY).
 SPC products add: risk (outlook category, e.g. "ENH"), md_number, concerning
 ("Severe potential...Tornado Watch likely"), watch_prob (percent).
 SWPC messages add: scale ("G3"), scale_desc ("G3 (Strong)").
+Daily climate reports (CLI) add: climate (high, low, precip and snow with their
+normals and records, one line each).
 """
 
 from __future__ import annotations
 
 import string
 
+from . import climate
 from .models import Alert
 from .timefmt import fmt_event, fmt_local, fmt_multi, fmt_zulu, parse_iso
 
@@ -35,7 +38,7 @@ DEFAULT_BODY = "{threat}{area_short}\nUntil {expires}\n{nws_headline}"
 # Text products (AFD, HWO, ...) have no area or expiry.
 PRODUCT_BODY = "{headline}\nIssued {sent}"
 # Daily climate reports (CLI): the high/low/precip summary first.
-CLIMATE_BODY = "{nws_headline}\n{headline}"
+CLIMATE_BODY = "{nws_headline}\n{climate}"
 NHC_TITLE = "{storm} · {product}"
 NHC_BODY = "{storm_stats}\n{watches}\n{nws_headline}"
 SPC_TITLE = "{status_prefix}{headline}"
@@ -119,6 +122,8 @@ def build_vars(a: Alert, user_tz: str = "America/Denver", display: list[str] | N
         "status_prefix": f"{status} " if status else "",
         "first_line": (a.description.strip().splitlines() or [""])[0],
     }
+    # Daily climate reports: normals and records, one line each.
+    v["climate"] = climate.details(a.description) if climate.is_cli(a) else ""
     for name in NHC_VARS:
         v[name] = str(a.params.get(name, "")) if a.source == "nhc" else ""
     for name in PARAM_VARS:
