@@ -103,7 +103,8 @@ def test_push_carries_the_infographic(db, cfg, channels, sent):
     n = sent[0]
     assert n.image_url == climate.image_url(cli())
     assert n.image_name == "climate.png"
-    assert n.body.startswith('Denver CO, Nov 1: High 68 · Low 35')
+    assert n.body.splitlines()[0].startswith('Denver CO, Nov 1: High 68 · Low 35')
+    assert "High 68 (normal 59, +9 · record 81 in 1950)" in n.body.splitlines()
     assert NtfyChannel({"topic": "t"}).payload(n)["filename"] == "climate.png"
 
 
@@ -113,3 +114,17 @@ def test_doc_rule_matches_only_that_station():
                         "filters": {"include_any": ["(CLIDEN)"]}}])[0]
     assert rule.passes_filters(cli())[0]
     assert not rule.passes_filters(cli(awips="AKO"))[0]
+
+
+def test_details_normals_and_records():
+    assert climate.details(MORNING).splitlines() == [
+        "High 68 (normal 59, +9 · record 81 in 1950)",
+        "Low 35 (normal 31, +4 · record 5 in 1991)",
+        'Precip 0.00" (normal 0.03", -0.03 · record 0.88" in 1946)',
+        'Snow 0.0" (normal 0.2", -0.2 · record 6.5" in 1946)',
+    ]
+    lines = climate.details(AFTERNOON).splitlines()
+    assert lines[0] == "NEW RECORD High 71 (normal 58, +13 · record 70 in 1950)"
+    assert lines[2] == 'Precip T (normal 0.03", -0.03 · record 0.88" in 1946)'
+    assert len(lines) == 3  # snowfall missing (MM)
+    assert climate.details("nothing") == ""

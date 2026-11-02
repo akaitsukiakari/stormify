@@ -122,6 +122,65 @@ def summary(text: str) -> str:
     return f"{head}: " + " · ".join(bits) if bits else head
 
 
+V = r"-?\d+(?:\.\d+)?|T|MM"
+TEMP_ROW = re.compile(
+    rf"^\s*(?P<item>MAXIMUM|MINIMUM)\s+(?P<obs>{V})(?P<new>R)?\s+(?:\d{{1,4}}\s+[AP]M\s+|MM\s+)?"
+    rf"(?P<rec>{V})R?\s+(?P<year>\d{{4}}|MM)\s+(?P<normal>{V})\s+(?P<dep>{V})")
+DAY_ROW = re.compile(
+    rf"^\s*(?:YESTERDAY|TODAY)\s+(?P<obs>{V})(?P<new>R)?\s+(?P<rec>{V})R?\s+(?P<year>\d{{4}}|MM)\s+"
+    rf"(?P<normal>{V})\s+(?P<dep>{V})")
+
+
+def _row(lines: list[str], header: str, rx: re.Pattern, item: str | None = None) -> dict | None:
+    start = next((i for i, ln in enumerate(lines) if ln.strip().startswith(header)), None)
+    if start is None:
+        return None
+    for ln in lines[start + 1:start + 12]:
+        if ln[:1].strip():
+            break  # the next section header
+        m = rx.match(ln)
+        if m and (item is None or m.group("item") == item):
+            return m.groupdict()
+    return None
+
+
+def _ok(x: str | None) -> bool:
+    return bool(x) and x != "MM"
+
+
+def _line(label: str, row: dict | None, unit: str = "") -> str:
+    """'High 68 (normal 59, +9 · record 81 in 1950)', with NEW RECORD when the report flags one."""
+    if not row or not _ok(row["obs"]):
+        return ""
+    u = lambda x: x + (unit if x != "T" else "")  # noqa: E731
+    out = f"{label} {u(row['obs'])}"
+    extra = []
+    if _ok(row["normal"]):
+        dep = row["dep"] if _ok(row["dep"]) else ""
+        if dep and not dep.startswith("-") and dep != "T" and float(dep) != 0:
+            dep = "+" + dep
+        extra.append(f"normal {u(row['normal'])}" + (f", {dep}" if dep else ""))
+    if _ok(row["rec"]):
+        extra.append(f"record {u(row['rec'])}" + (f" in {row['year']}" if _ok(row["year"]) else ""))
+    if extra:
+        out += " (" + " · ".join(extra) + ")"
+    if row.get("new"):
+        out = "NEW RECORD " + out
+    return out
+
+
+def details(text: str) -> str:
+    """Normals and records for the day, one line each (empty if the report can't be read)."""
+    lines = (text or "").replace("\r", "").upper().split("\n")
+    rows = [
+        _line("High", _row(lines, "TEMPERATURE", TEMP_ROW, "MAXIMUM")),
+        _line("Low", _row(lines, "TEMPERATURE", TEMP_ROW, "MINIMUM")),
+        _line("Precip", _row(lines, "PRECIPITATION", DAY_ROW), '"'),
+        _line("Snow", _row(lines, "SNOWFALL", DAY_ROW), '"'),
+    ]
+    return "\n".join(r for r in rows if r)
+
+
 def image_url(a: Alert) -> str | None:
     """IEM's infographic of a CLI report, or None for anything else."""
     if not is_cli(a):
