@@ -135,6 +135,22 @@ def test_scope_groups_follow_the_saved_group():
         Rule.from_dict({"name": "bad", "scope": {"offices": "BOU"}})
 
 
+def test_product_ids():
+    from stormify.models import Alert
+
+    def product(pil):
+        return Alert(id=pil, source="nws-product", event="Climatological Report (Daily)",
+                     office="BOU", kind="Product", params={"awipsId": pil})
+
+    r = rule(events=["Climatological Report (Daily)"], product_ids=["cliden"], scope={"offices": ["BOU"]})
+    assert r.matches_product(product("CLIDEN"))
+    assert not r.matches_product(product("CLIGXY"))
+    assert not rule(product_ids=["CLIDEN"]).matches_product(alert("tor1"))
+    assert rule(product_ids=[]).matches_product(product("CLIGXY"))
+    with pytest.raises(RuleError):
+        rule(product_ids="CLIDEN")
+
+
 def test_catch_all_only_gets_what_other_rules_leave():
     rules = load_rules([
         {"name": "BOU warnings", "kinds": ["Warning"], "scope": {"offices": ["BOU"]}},

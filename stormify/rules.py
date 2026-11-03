@@ -17,6 +17,7 @@ Rule JSON shape (all keys optional except name):
   "events": ["Tornado Warning", "Tornado Watch"],   # exact names, case-insensitive; empty = any
   "kinds": ["Warning"],                              # Emergency/Warning/Watch/Advisory/Statement/...
   "tags_any": ["pds", "emergency"],                 # derived tags; alert needs at least one
+  "product_ids": ["CLIDEN"],                         # AWIPS product IDs (PILs); empty = any
   "scope": {"nationwide": true}                      # or {"offices": ["BOU"], "zones": [...],
                                                      #     "states": ["CO"], "same": ["008005"],
                                                      #     "groups": ["home"]}  (saved office groups)
@@ -65,6 +66,15 @@ def _norm_office(o: str) -> str:
     return o[1:] if len(o) == 4 and o[0] in "KP" else o
 
 
+def product_id(a: Alert) -> str:
+    """The alert's AWIPS product ID (PIL), like CLIDEN or AFDBOU; "" if it has none."""
+    params = a.params or {}
+    pid = params.get("awipsId") or params.get("AWIPSidentifier") or ""
+    if isinstance(pid, list):
+        pid = pid[0] if pid else ""
+    return str(pid).strip().upper()
+
+
 @lru_cache(maxsize=1024)
 def _compile(pattern: str, case_sensitive: bool) -> re.Pattern:
     return re.compile(pattern, 0 if case_sensitive else re.IGNORECASE)
@@ -77,6 +87,7 @@ class Rule:
     events: list[str] = field(default_factory=list)
     kinds: list[str] = field(default_factory=list)
     tags_any: list[str] = field(default_factory=list)
+    product_ids: list[str] = field(default_factory=list)
     scope: dict = field(default_factory=lambda: {"nationwide": True})
     filters: dict = field(default_factory=dict)
     min_hail_in: float | None = None
@@ -116,6 +127,8 @@ class Rule:
             raise RuleError(f"{self.name}: priority must be 1..5")
         if not isinstance(self.scope, dict):
             raise RuleError(f"{self.name}: scope must be an object")
+        if not isinstance(self.product_ids, list):
+            raise RuleError(f"{self.name}: product_ids must be a list")
         for key in ("offices", "zones", "states", "same", "groups"):
             if not isinstance(self.scope.get(key, []), list):
                 raise RuleError(f"{self.name}: scope {key} must be a list")
@@ -138,6 +151,10 @@ class Rule:
                 return False
         if self.tags_any and not (a.tag_set & {t.lower() for t in self.tags_any}):
             return False
+        if self.product_ids:
+            wanted = {str(p).strip().upper() for p in self.product_ids if str(p).strip()}
+            if wanted and product_id(a) not in wanted:
+                return False
         return True
 
     def matches_scope(self, a: Alert) -> bool:
