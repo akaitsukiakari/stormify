@@ -128,3 +128,49 @@ def test_details_normals_and_records():
     assert lines[2] == 'Precip T (normal 0.03", -0.03 · record 0.88" in 1946)'
     assert len(lines) == 3  # snowfall missing (MM)
     assert climate.details("nothing") == ""
+
+
+PNG = b"\x89PNG\r\n\x1a\nfake"
+
+
+class _Resp:
+    def __init__(self, content, ok=True):
+        self.content, self.ok = content, ok
+
+
+def test_push_links_the_dashboard_copy_with_public_url(db, cfg, channels, sent, tmp_path, monkeypatch):
+    from stormify.web.app import create_app
+
+    cfg.public_url = "https://wx.example.com"
+    cfg.cache_dir = str(tmp_path / "cache")
+    uid = db.get_user(name="scott")["id"]
+    db.replace_rules(uid, [{"name": "BOU products", "kinds": ["Product"], "scope": {"offices": ["BOU"]}}])
+    Engine(db, cfg, channel_factory=channels).process([cli()])
+    n = sent[0]
+    assert n.image_url.startswith("https://wx.example.com/img/") and n.image_name == "climate.png"
+
+    calls = []
+    monkeypatch.setattr(climate.time, "sleep", lambda s: None)
+    replies = iter([_Resp(b"not yet", ok=False), _Resp(PNG)])
+
+    def fake_get(self, url, **kw):
+        calls.append(url)
+        return next(replies)
+    monkeypatch.setattr(climate.requests.Session, "get", fake_get)
+    app = create_app(cfg, db)
+    app.testing = True
+    c = app.test_client()
+    path = "/img/" + n.image_url.rsplit("/", 1)[-1]
+    r = c.get(path)  # no login needed; retried once, then cached
+    assert r.status_code == 200 and r.data == PNG and r.mimetype == "image/png"
+    assert c.get(path).data == PNG
+    assert calls == [climate.image_url(cli())] * 2
+
+
+def test_fetch_image_gives_up_without_a_png(tmp_path, monkeypatch):
+    monkeypatch.setattr(climate.time, "sleep", lambda s: None)
+
+    class S:
+        def get(self, url, **kw):
+            return _Resp(b"<html>error</html>")
+    assert climate.fetch_image(cli(), str(tmp_path), "(test)", session=S()) is None

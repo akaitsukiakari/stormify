@@ -12,8 +12,14 @@ last three letters, e.g. KBOU + CLIDEN -> KDEN; the date from the report's headl
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import time
 from datetime import date, datetime, timezone
+from pathlib import Path
+
+import requests
 
 from .models import Alert
 
@@ -179,6 +185,43 @@ def details(text: str) -> str:
         _line("Snow", _row(lines, "SNOWFALL", DAY_ROW), '"'),
     ]
     return "\n".join(r for r in rows if r)
+
+
+def fetch_image(a: Alert, cache: str, user_agent: str, session=None, timeout: float = 20.0,
+                tries: int = 3, wait: float = 4.0) -> bytes | None:
+    """IEM's infographic for a CLI, fetched once and kept on disk (None if IEM can't give one yet).
+
+    The phone gets the picture from the dashboard rather than from IEM: a picture from our own
+    server comes with a size, which ntfy needs to show it in the notification instead of a
+    Download button, and IEM's plotter takes a few seconds the first time it draws one.
+    """
+    url = image_url(a)
+    if not url:
+        return None
+    key = hashlib.sha1(url.encode()).hexdigest()
+    path = Path(cache) / "climate" / key[:2] / f"{key}.png"
+    if path.exists():
+        return path.read_bytes()
+    sess = session or requests.Session()
+    data = b""
+    # The push can beat IEM to the report by a little; give it a few tries before giving up.
+    for attempt in range(tries):
+        if attempt:
+            time.sleep(wait)
+        try:
+            resp = sess.get(url, headers={"User-Agent": user_agent}, timeout=timeout)
+            if resp.ok and resp.content.startswith(b"\x89PNG"):
+                data = resp.content
+                break
+        except requests.RequestException:
+            pass
+    if not data:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+    return data
 
 
 def image_url(a: Alert) -> str | None:

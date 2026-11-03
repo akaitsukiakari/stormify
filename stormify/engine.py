@@ -109,9 +109,11 @@ class Engine:
         if (base and self.cfg.notification_images and status != "CANCELLED"
                 and images.available() and images.drawable(a)):
             image = f"{base}/img/{self.db.image_token(a.id)}.png"
-        # A daily climate report gets IEM's infographic (what IEMBOT posts), linked straight from IEM.
-        if self.cfg.notification_images and climate.is_cli(a):
-            image, image_name = climate.image_url(a), "climate.png"
+        # A daily climate report gets IEM's infographic (what IEMBOT posts). The dashboard passes it
+        # along so it arrives with a size and ntfy shows it inline; without a public address, link IEM.
+        if self.cfg.notification_images and climate.is_cli(a) and climate.image_url(a):
+            image = f"{base}/img/{self.db.image_token(a.id)}.png" if base else climate.image_url(a)
+            image_name = "climate.png"
         return Notification(title=title, body=body, priority=priority, click_url=click, image_url=image,
                             image_name=image_name,
                             group=a.thread_key, is_test="test" in a.tag_set,

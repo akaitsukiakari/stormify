@@ -102,6 +102,13 @@ def create_app(cfg: Config, db: Database) -> Flask:
         nonlocal renderer
         alert_id = db.alert_for_image(token)
         a = db.get_alert(alert_id) if alert_id else None
+        if a and climate.is_cli(a):
+            data = climate.fetch_image(a, cache_dir(cfg), cfg.user_agent)
+            if not data:
+                return Response("not available yet", status=404, mimetype="text/plain")
+            resp = Response(data, mimetype="image/png")
+            resp.headers["Cache-Control"] = "public, max-age=86400"
+            return resp
         if not a or not images.available():
             return Response("not found", status=404, mimetype="text/plain")
         geom, complete = a.geometry, True
