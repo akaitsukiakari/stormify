@@ -34,8 +34,15 @@ Rule JSON shape (all keys optional except name):
   "priority": 4,               # 1 (min) .. 5 (max), maps to ntfy priority
   "on_update": "significant",  # new_only | significant | any
   "on_cancel": false,
+  "fallback": false,           # catch-all: only for alerts no other rule covers
   "title_template": null, "body_template": null
 }
+
+A catch-all rule ("fallback": true) only applies to an alert when no regular
+rule's products and scope fit it, e.g. "everything else from BOU goes to the
+dashboard" or "everything else from BOU pushes quietly". An alert a regular
+rule covers but its text filters stop still counts as covered, so a catch-all
+never pushes something a filter was meant to keep off the phone.
 """
 
 from __future__ import annotations
@@ -89,12 +96,15 @@ class Rule:
     priority: int = 3
     on_update: str = "significant"
     on_cancel: bool = False
+    fallback: bool = False
     title_template: str | None = None
     body_template: str | None = None
     id: int | None = None
 
     # Offices from the saved groups the scope names; filled in by load_rules, never saved.
     group_offices = frozenset()
+    # Catch-all only: the regular rules it yields to, when testing it on its own. Never saved.
+    others: tuple = ()
 
     @classmethod
     def from_dict(cls, d: dict) -> "Rule":
@@ -237,13 +247,20 @@ def clean_groups(raw) -> dict[str, list[str]]:
     return out
 
 
+def covering(alert: Alert, rules: list[Rule]) -> list[Rule]:
+    """The turned-on rules whose products and scope fit the alert (filters not checked yet).
+
+    Catch-all rules are only included when no regular rule fits."""
+    fits = [r for r in rules if r.enabled and r.matches_product(alert) and r.matches_scope(alert)]
+    regular = [r for r in fits if not r.fallback]
+    return regular or fits
+
+
 def evaluate(alert: Alert, rules: list[Rule]) -> Decision:
     push: list[Rule] = []
     matched: list[str] = []
     reasons: list[str] = []
-    for r in rules:
-        if not r.enabled or not r.matches_product(alert) or not r.matches_scope(alert):
-            continue
+    for r in covering(alert, rules):
         ok, why = r.passes_filters(alert)
         if not ok:
             reasons.append(f"{r.name}: {why}")

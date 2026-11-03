@@ -236,6 +236,7 @@
     priority: "How loud the notification is. 5 can break through Do Not Disturb if you allow it in the ntfy app. Emergencies always go out at 5.",
     on_update: "Warnings get updated (extended, expanded, cancelled). New alerts only: one push per alert. Significant: also when it gets worse (bigger hail, a PDS or emergency tag, a higher SPC risk). Every update: each new version.",
     on_cancel: "Send a short CANCELLED note when something you were pushed is cancelled early.",
+    fallback: "Catch-all: this rule only gets alerts that none of your other rules cover, like \"everything else from BOU\". If another rule covers an alert but its text filters stop it, the catch-all leaves it alone too.",
     events: "Exact product names, like Tornado Warning or Day 1 Hail Outlook. Start typing to pick one. Leave empty to match any event.",
     kinds: "Broad groups instead of exact names. Warning includes emergencies. Outlook covers all SPC outlooks, Product covers text products like AFD, HWO and PNS. Pick none to match any kind.",
     product_ids: "The AWIPS ID in parentheses after a text product's name, like CLIDEN for Denver airport's daily climate report or AFDBOU. Only those products match. Leave empty to match any.",
@@ -264,6 +265,7 @@
     "spc-big": { name: "SPC Moderate or High risk", kinds: ["Outlook"], tags_any: ["risk-mdt", "risk-high"],
       scope: { nationwide: true }, priority: 4 },
     quiet: { name: "Keep off my phone: …", action: "log", scope: { offices: [] } },
+    rest: { name: "Everything else from …", action: "log", fallback: true, scope: { offices: [] } },
   };
 
   // ---- helpers --------------------------------------------------------------------
@@ -307,6 +309,7 @@
     for (const [k, v] of Object.entries(r)) {
       if (k.startsWith("_") || k === "id") continue;
       if (Array.isArray(v) && !v.length) continue;
+      if (k === "fallback" && !v) continue;
       if (v === null || v === "" || v === undefined) continue;
       out[k] = v;
     }
@@ -414,7 +417,8 @@
     if ((r.kinds || []).length) parts.push("any " + r.kinds.join("/").toLowerCase());
     if ((r.tags_any || []).length) parts.push("tagged " + listShort(r.tags_any, 3));
     if ((r.product_ids || []).length) parts.push("only " + listShort(r.product_ids, 3));
-    return parts.join(" · ") || "Any product";
+    const what = parts.join(" · ") || "Any product";
+    return r.fallback ? `Catch-all: ${parts.length ? what : "anything"} no other rule covers` : what;
   }
   function whereOf(r) {
     const s = r.scope || {};
@@ -492,6 +496,7 @@
           <label class="radio"><input type="radio" name="act" value="push" ${r.action !== "log" ? "checked" : ""}> Push to my phone</label>
           <label class="radio"><input type="radio" name="act" value="log" ${r.action === "log" ? "checked" : ""}> Dashboard only</label>
           <label><span>Loudness ${tip("priority")}</span><select data-k="priority">${Object.entries(PRIORITY).map(([v, l]) => `<option value="${v}" ${+v === +(r.priority || 3) ? "selected" : ""}>${l}</option>`).reverse().join("")}</select></label>
+          <label class="check"><input type="checkbox" data-k="fallback" ${r.fallback ? "checked" : ""}> Catch-all: only alerts no other rule covers ${tip("fallback")}</label>
         </fieldset>
         <fieldset><legend>Updates and cancellations</legend>
           <label><span>On updates ${tip("on_update")}</span><select data-k="on_update">${Object.entries(ON_UPDATE).map(([v, l]) => `<option value="${v}" ${v === (r.on_update || "significant") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -666,7 +671,9 @@
     chip("same", s, "same", { normalize: (v) => v.trim().replace(/\D/g, "").padStart(6, "0"), placeholder: "008005" });
 
     const note = el.querySelector("[data-test-note]");
-    const body = () => JSON.stringify({ rule: cleanRule(r), office_groups: groups });
+    // A catch-all's matches depend on the other rules, so send them along (drafts included).
+    const body = () => JSON.stringify({ rule: cleanRule(r), office_groups: groups,
+      others: r.fallback ? rules.filter((x) => x !== r).map(cleanRule) : undefined });
     const testPush = async (alertId, btn) => {
       btn.disabled = true;
       note.textContent = "Sending…";

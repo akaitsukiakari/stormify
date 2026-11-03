@@ -11,6 +11,14 @@ A rule matches an alert when its **products** and **scope** match. Then:
 
 If several push rules match, the highest `priority` wins, along with that rule's templates and update behavior.
 
+A rule with `"fallback": true` is a catch-all: it only applies when no regular rule's products and scope fit the alert. An alert a regular rule covers but whose text filters stop it still counts as covered, so the catch-all leaves it alone. Rule order doesn't matter. For example, push only what you picked from BOU, and label the rest:
+
+```json
+{"name": "Everything else from BOU", "scope": {"offices": ["BOU"]}, "action": "log", "fallback": true}
+```
+
+Every alert is on the dashboard anyway, so a dashboard-only catch-all mostly names what the leftovers are (the feed shows "matched Everything else from BOU" instead of "no rule matched"). A push catch-all at priority 1 or 2 sends the leftovers quietly.
+
 ## Fields
 
 | Field | Meaning |
@@ -33,6 +41,7 @@ If several push rules match, the highest `priority` wins, along with that rule's
 | `priority` | 1–5 (ntfy priority). Emergencies are always sent at 5. |
 | `on_update` | `new_only`, `significant` (severity up, new PDS/emergency/observed tag, bigger hail/wind, upgrade; for NHC, stronger winds, a new watch/warning type, or becoming a major hurricane; for SPC outlooks, a higher risk category; for SWPC, a higher G/S/R level), or `any` |
 | `on_cancel` | Push a "CANCELLED" note when something you were pushed is cancelled |
+| `fallback` | Catch-all. `true` means the rule only applies to alerts no regular rule covers (see below). Default `false`. |
 | `title_template` / `body_template` | Custom notification text (see below) |
 
 Text filters search the event name, headline, NWS headline, description, instructions, area, and sender.

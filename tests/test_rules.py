@@ -149,3 +149,32 @@ def test_product_ids():
     assert rule(product_ids=[]).matches_product(product("CLIGXY"))
     with pytest.raises(RuleError):
         rule(product_ids="CLIDEN")
+
+
+def test_catch_all_only_gets_what_other_rules_leave():
+    rules = load_rules([
+        {"name": "BOU warnings", "kinds": ["Warning"], "scope": {"offices": ["BOU"]}},
+        {"name": "Small hail SPS stays quiet", "events": ["Special Weather Statement"],
+         "scope": {"offices": ["BOU"]}, "filters": {"exclude_any": ["nickel"]}},
+        {"name": "Everything else from BOU", "scope": {"offices": ["BOU"]}, "action": "log", "fallback": True},
+    ])
+    d = evaluate(alert("tor1"), rules)
+    assert d.action == "push" and d.matched == ["BOU warnings"]
+    d = evaluate(alert("wwy1"), rules)
+    assert d.action == "log" and d.matched == ["Everything else from BOU"]
+    # Outside BOU: nothing covers it, the catch-all included.
+    assert evaluate(alert("svr1"), rules).matched == []
+
+
+def test_catch_all_leaves_alerts_a_filter_stopped():
+    rules = load_rules([
+        {"name": "BOU SPS", "events": ["Special Weather Statement"], "scope": {"offices": ["BOU"]},
+         "filters": {"include_any": ["no such phrase"]}},
+        {"name": "Rest of BOU, quietly", "scope": {"offices": ["BOU"]}, "priority": 1, "fallback": True},
+    ])
+    d = evaluate(alert("sps1"), rules)
+    assert d.action == "log" and d.matched == [] and "no include_any" in d.reason
+    # A turned-off rule doesn't count, so the catch-all takes it.
+    rules[0].enabled = False
+    d = evaluate(alert("sps1"), rules)
+    assert d.action == "push" and d.matched == ["Rest of BOU, quietly"] and d.priority == 1

@@ -290,7 +290,13 @@ def create_app(cfg: Config, db: Database) -> Flask:
             raise RuleError("expected {\"rule\": {...}}")
         r = {k: v for k, v in r.items() if k != "id"}
         r["enabled"] = True  # a rule that's switched off still gets tested
-        return load_rules([r], payload.get("office_groups") or user["settings"].get("office_groups"))[0]
+        groups = payload.get("office_groups") or user["settings"].get("office_groups")
+        rule = load_rules([r], groups)[0]
+        if rule.fallback:
+            # A catch-all only gets what the other rules leave, so it needs them to know what that is.
+            others = [{k: v for k, v in o.items() if k != "id"} for o in payload.get("others") or []]
+            rule.others = [o for o in load_rules(others, groups) if o.enabled and not o.fallback]
+        return rule
 
     def _send(user: dict, n: Notification):
         channels = channels_for_user(user["settings"])
@@ -319,6 +325,8 @@ def create_app(cfg: Config, db: Database) -> Flask:
         for a, first_seen in db.iter_alerts(since, MATCH_SCAN, pre):
             scanned += 1
             if a is None or not (rule.matches_product(a) and rule.matches_scope(a)):
+                continue
+            if any(o.matches_product(a) and o.matches_scope(a) for o in rule.others):
                 continue
             ok, why = rule.passes_filters(a)
             out.append((a, first_seen, "" if ok else why))
