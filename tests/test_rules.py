@@ -145,7 +145,11 @@ def test_product_ids():
     r = rule(events=["Climatological Report (Daily)"], product_ids=["cliden"], scope={"offices": ["BOU"]})
     assert r.matches_product(product("CLIDEN"))
     assert not r.matches_product(product("CLIGXY"))
-    assert not rule(product_ids=["CLIDEN"]).matches_product(alert("tor1"))
+    # Other product types on the same rule are untouched.
+    assert rule(product_ids=["CLIDEN"]).matches_product(alert("tor1"))
+    assert rule(product_ids=["CLIDEN"]).matches_product(product("AFDBOU"))
+    assert rule(product_ids=["CLIDEN", "CLMDEN"]).matches_product(product("CLMDEN"))
+    assert not rule(product_ids=["CLIDEN", "CLMDEN"]).matches_product(product("CLMGXY"))
     assert rule(product_ids=[]).matches_product(product("CLIGXY"))
     with pytest.raises(RuleError):
         rule(product_ids="CLIDEN")

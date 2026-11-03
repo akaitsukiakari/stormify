@@ -239,7 +239,7 @@
     fallback: "Catch-all: this rule only gets alerts that none of your other rules cover, like \"everything else from BOU\". If another rule covers an alert but its text filters stop it, the catch-all leaves it alone too.",
     events: "Exact product names, like Tornado Warning or Day 1 Hail Outlook. Start typing to pick one. Leave empty to match any event.",
     kinds: "Broad groups instead of exact names. Warning includes emergencies. Outlook covers all SPC outlooks, Product covers text products like AFD, HWO and PNS. Pick none to match any kind.",
-    product_ids: "The AWIPS ID in parentheses after a text product's name, like CLIDEN for Denver airport's daily climate report or AFDBOU. Only those products match. Leave empty to match any.",
+    product_ids: "Narrow one kind of text product to specific ones. The ID is in parentheses after the product's name. CLIDEN keeps only Denver airport's daily climate report out of all the CLI reports; everything else this rule matches is left alone. Add CLMDEN to do the same for the monthly ones.",
     tags_any: "Extra labels Stormify adds, like pds, emergency, risk-mdt or hail-30. The alert needs at least one of these. Leave empty to ignore tags.",
     nationwide: "Match alerts anywhere in the country. Turn this off to limit the rule to the offices, states or zones below.",
     offices: "NWS forecast offices, like BOU for Denver/Boulder. An SPC outlook counts for an office when one of its areas covers that office's city, and a mesoscale discussion when it names the office.",
@@ -416,7 +416,7 @@
     if ((r.events || []).length) parts.push(listShort(r.events, 2));
     if ((r.kinds || []).length) parts.push("any " + r.kinds.join("/").toLowerCase());
     if ((r.tags_any || []).length) parts.push("tagged " + listShort(r.tags_any, 3));
-    if ((r.product_ids || []).length) parts.push("only " + listShort(r.product_ids, 3));
+    if ((r.product_ids || []).length) parts.push("only " + listShort(r.product_ids, 3) + " of their type");
     const what = parts.join(" · ") || "Any product";
     return r.fallback ? `Catch-all: ${parts.length ? what : "anything"} no other rule covers` : what;
   }
@@ -513,7 +513,7 @@
             ${KINDS.map((k) => `<button type="button" class="chip ${(r.kinds || []).includes(k) ? "on" : ""}" data-kind="${k}">${k}</button>`).join("")}
           </div>
           <label><span>Only if tagged with any of ${tip("tags_any")}</span><div data-chip="tags_any"></div></label>
-          <label><span>Only these product IDs <span class="muted small">(CLIDEN, AFDBOU)</span> ${tip("product_ids")}</span><div data-chip="product_ids"></div></label>
+          <label><span>Of these product types, only <span class="muted small">(CLIDEN, CLMDEN)</span> ${tip("product_ids")}</span><div data-chip="product_ids"></div></label>
         </fieldset>
 
         <fieldset class="wide"><legend>Where</legend>
