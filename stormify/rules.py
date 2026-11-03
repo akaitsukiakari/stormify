@@ -17,7 +17,7 @@ Rule JSON shape (all keys optional except name):
   "events": ["Tornado Warning", "Tornado Watch"],   # exact names, case-insensitive; empty = any
   "kinds": ["Warning"],                              # Emergency/Warning/Watch/Advisory/Statement/...
   "tags_any": ["pds", "emergency"],                 # derived tags; alert needs at least one
-  "product_ids": ["CLIDEN"],                         # AWIPS product IDs (PILs); empty = any
+  "product_ids": ["CLIDEN"],                         # AWIPS IDs; of those types (CLI...), only these
   "scope": {"nationwide": true}                      # or {"offices": ["BOU"], "zones": [...],
                                                      #     "states": ["CO"], "same": ["008005"],
                                                      #     "groups": ["home"]}  (saved office groups)
@@ -152,8 +152,11 @@ class Rule:
         if self.tags_any and not (a.tag_set & {t.lower() for t in self.tags_any}):
             return False
         if self.product_ids:
+            # Narrows only the product types it names: CLIDEN keeps CLIDEN out of all CLI reports,
+            # and everything else the rule matches (warnings, AFDs, ...) is left alone.
             wanted = {str(p).strip().upper() for p in self.product_ids if str(p).strip()}
-            if wanted and product_id(a) not in wanted:
+            pid = product_id(a)
+            if len(pid) >= 4 and pid[:3] in {w[:3] for w in wanted} and pid not in wanted:
                 return False
         return True
 

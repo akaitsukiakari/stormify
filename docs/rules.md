@@ -28,7 +28,7 @@ Every alert is on the dashboard anyway, so a dashboard-only catch-all mostly nam
 | `events` | Exact event names, case-insensitive. Empty = any. e.g. `["Tornado Warning", "Tornado Watch"]`. NHC, SPC and SWPC products are listed below. |
 | `kinds` | Tiers: `Emergency`, `Warning`, `Watch`, `Advisory`, `Statement`, `Outlook`, `Discussion`, `Message`, `Product`, `Other`. An emergency also counts as a Warning. `Product` is an NWS text product (AFD, HWO, RER, ...); scope those by `offices`, since they carry no zones. |
 | `tags_any` | Derived tags, at least one required: `emergency`, `pds`, `considerable`, `destructive`, `observed`, `tornado-possible`, plus the NHC, SPC and SWPC tags below |
-| `product_ids` | AWIPS product IDs, case-insensitive. Empty = any. e.g. `["CLIDEN"]` keeps only Denver airport's daily climate report out of BOU's CLI products. Alerts without that ID don't match. |
+| `product_ids` | AWIPS product IDs, case-insensitive. Narrows only the product types named (the first three letters): `["CLIDEN"]` keeps CLIDEN and skips CLIGXY, CLIMNH and the other CLI reports, while every other event the rule matches is unaffected. Empty = no narrowing. |
 | `scope` | `{"nationwide": true}`, or any mix of `offices` (`"BOU"` or `"KBOU"`), `groups` (names of saved office groups), `zones` (UGC like `COZ039`, `COC005`), `states` (`"CO"`), `same` (FIPS like `"008005"`) |
 | `filters.include_any` | At least one of these phrases must appear (OR) |
 | `filters.include_all` | All of these phrases must appear (AND) |
