@@ -283,3 +283,16 @@ def test_active_only_still_includes_the_opened_alert(client):
     expired = next(a["id"] for a in every if a["id"] not in active)
     got = client.get(f"/api/alerts?hours=0&lite=1&active=1&id={expired}").json["alerts"]
     assert got[0]["id"] == expired
+
+
+def test_catch_all_matches_skip_what_other_rules_cover(client):
+    login(client)
+    rest = {"name": "Everything else, BOU", "scope": {"offices": ["BOU"]}, "action": "log", "fallback": True}
+    warnings = {"name": "BOU warnings", "kinds": ["Warning"], "scope": {"offices": ["BOU"]}}
+    alone = client.post("/api/rules/matches", json={"rule": rest}).json["matches"]
+    assert any(m["kind"] == "Warning" for m in alone)
+    left = client.post("/api/rules/matches", json={"rule": rest, "others": [warnings]}).json["matches"]
+    assert left and all(m["office"] == "BOU" and m["kind"] not in ("Warning", "Emergency") for m in left)
+    # A turned-off rule leaves its alerts to the catch-all.
+    off = client.post("/api/rules/matches", json={"rule": rest, "others": [{**warnings, "enabled": False}]}).json
+    assert len(off["matches"]) == len(alone)
