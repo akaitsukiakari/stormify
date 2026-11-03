@@ -238,6 +238,7 @@
     on_cancel: "Send a short CANCELLED note when something you were pushed is cancelled early.",
     events: "Exact product names, like Tornado Warning or Day 1 Hail Outlook. Start typing to pick one. Leave empty to match any event.",
     kinds: "Broad groups instead of exact names. Warning includes emergencies. Outlook covers all SPC outlooks, Product covers text products like AFD, HWO and PNS. Pick none to match any kind.",
+    product_ids: "The AWIPS ID in parentheses after a text product's name, like CLIDEN for Denver airport's daily climate report or AFDBOU. Only those products match. Leave empty to match any.",
     tags_any: "Extra labels Stormify adds, like pds, emergency, risk-mdt or hail-30. The alert needs at least one of these. Leave empty to ignore tags.",
     nationwide: "Match alerts anywhere in the country. Turn this off to limit the rule to the offices, states or zones below.",
     offices: "NWS forecast offices, like BOU for Denver/Boulder. An SPC outlook counts for an office when one of its areas covers that office's city, and a mesoscale discussion when it names the office.",
@@ -412,6 +413,7 @@
     if ((r.events || []).length) parts.push(listShort(r.events, 2));
     if ((r.kinds || []).length) parts.push("any " + r.kinds.join("/").toLowerCase());
     if ((r.tags_any || []).length) parts.push("tagged " + listShort(r.tags_any, 3));
+    if ((r.product_ids || []).length) parts.push("only " + listShort(r.product_ids, 3));
     return parts.join(" · ") || "Any product";
   }
   function whereOf(r) {
@@ -506,6 +508,7 @@
             ${KINDS.map((k) => `<button type="button" class="chip ${(r.kinds || []).includes(k) ? "on" : ""}" data-kind="${k}">${k}</button>`).join("")}
           </div>
           <label><span>Only if tagged with any of ${tip("tags_any")}</span><div data-chip="tags_any"></div></label>
+          <label><span>Only these product IDs <span class="muted small">(CLIDEN, AFDBOU)</span> ${tip("product_ids")}</span><div data-chip="product_ids"></div></label>
         </fieldset>
 
         <fieldset class="wide"><legend>Where</legend>
@@ -656,6 +659,7 @@
     });
 
     chip("tags_any", r, "tags_any", { suggest: tagSuggest, normalize: (v) => v.trim().toLowerCase(), placeholder: "pds, g3…" });
+    chip("product_ids", r, "product_ids", { normalize: (v) => v.trim().toUpperCase(), placeholder: "CLIDEN…" });
     chip("offices", s, "offices", { suggest: officeSuggest, normalize: normOffice, placeholder: "BOU, Denver…", labelOf: officeLabel });
     chip("states", s, "states", { normalize: (v) => v.trim().toUpperCase().slice(0, 2), placeholder: "CO" });
     chip("zones", s, "zones", { normalize: (v) => v.trim().toUpperCase(), placeholder: "COZ039" });
