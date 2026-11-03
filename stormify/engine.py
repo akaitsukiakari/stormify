@@ -12,7 +12,7 @@ from .db import Database, utcnow
 from . import climate, images
 from .delivery import Channel, DeliveryError, Notification, channels_for_user
 from .models import SIGNIFICANT_TAGS, Alert
-from .rules import Rule, RuleError, evaluate, load_rules
+from .rules import Rule, RuleError, covering, evaluate, load_rules
 from .templates import CLIMATE_BODY, DEFAULT_BODY, DEFAULT_TITLE, PRODUCT_BODY, SOURCE_DEFAULTS, build_vars, render
 
 log = logging.getLogger(__name__)
@@ -138,8 +138,7 @@ class Engine:
             if prior:
                 # Cancellations are terse; match them against what the original looked like.
                 view = replace(a, tags=sorted(a.tag_set | set(prior["snapshot"].get("tags", []))))
-                cancel_rules = [r for r in rules if r.action == "push" and r.on_cancel
-                                and r.matches_product(view) and r.matches_scope(view)]
+                cancel_rules = [r for r in covering(view, rules) if r.action == "push" and r.on_cancel]
                 if cancel_rules:
                     lead = max(cancel_rules, key=lambda r: r.priority)
                     n = self.build_notification(a, lead, user, "CANCELLED", min(lead.priority, 3))
