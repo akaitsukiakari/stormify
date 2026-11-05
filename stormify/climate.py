@@ -16,7 +16,7 @@ import hashlib
 import os
 import re
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -187,13 +187,60 @@ def details(text: str) -> str:
     return "\n".join(r for r in rows if r)
 
 
+IEM_JSON = "https://mesonet.agron.iastate.edu/json/cli.py"
+
+
+def iem_has_report(a: Alert, sess: requests.Session, user_agent: str, timeout: float = 20.0) -> bool | None:
+    """Has IEM read this report yet? True/False, or None if IEM's listing couldn't be checked.
+
+    IEM draws the picture from whatever report it has for that station and day, so asking before
+    it has read the new one gets the old one (or nothing). Its CLI listing names the product
+    each day's numbers came from.
+    """
+    day = report_date(a.description)
+    if not day:
+        return False
+    try:
+        resp = sess.get(IEM_JSON, params={"station": station_id(a), "year": day.year},
+                        headers={"User-Agent": user_agent}, timeout=timeout)
+        resp.raise_for_status()
+        rows = resp.json().get("results") or []
+    except (requests.RequestException, ValueError, AttributeError):
+        return None
+    mine = product_id(a)
+    st = station_id(a)
+    rows = [r for r in rows if isinstance(r, dict) and str(r.get("station") or st).upper() in (st, st[1:])]
+    if not rows:
+        return None  # not a listing for this station: can't tell
+    for row in rows:
+        if str(row.get("valid", ""))[:10] != day.isoformat():
+            continue
+        theirs = str(row.get("product") or "")
+        # Same report, or a newer one for that day (a correction, or the next morning's final).
+        # IEM stamps a product with its header time, which can be a minute or two off the API's.
+        if theirs == mine or _stamp(theirs) >= _stamp(mine) - SLACK:
+            return True
+    return False
+
+
+SLACK = timedelta(minutes=10)
+
+
+def _stamp(pid: str) -> datetime:
+    try:
+        return datetime.strptime(pid[:12], "%Y%m%d%H%M")
+    except ValueError:
+        return datetime.min + SLACK
+
+
 def fetch_image(a: Alert, cache: str, user_agent: str, session=None, timeout: float = 20.0,
-                tries: int = 3, wait: float = 4.0) -> bytes | None:
-    """IEM's infographic for a CLI, fetched once and kept on disk (None if IEM can't give one yet).
+                tries: int = 3, wait: float = 5.0) -> bytes | None:
+    """IEM's infographic for a CLI, kept on disk once IEM has read this report (None if not yet).
 
     The phone gets the picture from the dashboard rather than from IEM: a picture from our own
     server comes with a size, which ntfy needs to show it in the notification instead of a
-    Download button, and IEM's plotter takes a few seconds the first time it draws one.
+    Download button. The push can beat IEM to a new report, so this checks IEM has it first and
+    never keeps (or sends) the previous report's picture.
     """
     url = image_url(a)
     if not url:
@@ -203,25 +250,40 @@ def fetch_image(a: Alert, cache: str, user_agent: str, session=None, timeout: fl
     if path.exists():
         return path.read_bytes()
     sess = session or requests.Session()
-    data = b""
-    # The push can beat IEM to the report by a little; give it a few tries before giving up.
+    ready = None
     for attempt in range(tries):
         if attempt:
             time.sleep(wait)
-        try:
-            resp = sess.get(url, headers={"User-Agent": user_agent}, timeout=timeout)
-            if resp.ok and resp.content.startswith(b"\x89PNG"):
-                data = resp.content
-                break
-        except requests.RequestException:
-            pass
-    if not data:
+        ready = iem_has_report(a, sess, user_agent, timeout)
+        if ready is not False:
+            break
+    if ready is False:
+        return None  # IEM hasn't read it yet: no picture beats yesterday's picture
+    try:
+        resp = sess.get(url, headers={"User-Agent": user_agent}, timeout=timeout)
+    except requests.RequestException:
         return None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
+    if not (resp.ok and resp.content.startswith(b"\x89PNG")):
+        return None
+    data = resp.content
+    if ready:  # only keep a picture we know is this report's
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
     return data
+
+
+def product_id(a: Alert) -> str:
+    """IEM's id for the product, e.g. 202611042333-KBOU-CDUS45-CLIDEN."""
+    try:
+        sent = datetime.fromisoformat((a.sent or "").replace("Z", "+00:00")).astimezone(timezone.utc)
+        stamp = sent.strftime("%Y%m%d%H%M")
+    except ValueError:
+        stamp = re.sub(r"\D", "", a.sent or "")[:12]
+    params = a.params or {}
+    return "-".join(x for x in (stamp, (params.get("issuingOffice") or "").upper(),
+                                params.get("wmoCollectiveId") or "", params.get("awipsId") or "") if x)
 
 
 def image_url(a: Alert) -> str | None:
@@ -233,12 +295,4 @@ def image_url(a: Alert) -> str | None:
         return None
     # IEM caches each picture by its URL. The afternoon "so far" report and next morning's final
     # one share a station and date, so the product id keeps the morning's from showing the afternoon's.
-    try:
-        sent = datetime.fromisoformat((a.sent or "").replace("Z", "+00:00")).astimezone(timezone.utc)
-        stamp = sent.strftime("%Y%m%d%H%M")
-    except ValueError:
-        stamp = re.sub(r"\D", "", a.sent or "")[:12]
-    params = a.params or {}
-    pid = "-".join(x for x in (stamp, (params.get("issuingOffice") or "").upper(),
-                               params.get("wmoCollectiveId") or "", params["awipsId"]) if x)
-    return IEM_PLOT.format(station=station_id(a), day=day.isoformat(), pid=pid)
+    return IEM_PLOT.format(station=station_id(a), day=day.isoformat(), pid=product_id(a))

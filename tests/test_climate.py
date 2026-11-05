@@ -134,8 +134,37 @@ PNG = b"\x89PNG\r\n\x1a\nfake"
 
 
 class _Resp:
-    def __init__(self, content, ok=True):
-        self.content, self.ok = content, ok
+    def __init__(self, content=b"", ok=True, data=None):
+        self.content, self.ok, self.data = content, ok, data
+
+    def raise_for_status(self):
+        if not self.ok:
+            import requests
+            raise requests.HTTPError("bad")
+
+    def json(self):
+        return self.data
+
+
+def listing(*rows):
+    return _Resp(data={"results": [{"valid": v, "product": p} for v, p in rows]})
+
+
+class FakeIEM:
+    """IEM's CLI listing replies in turn (the last one repeats), and the picture."""
+
+    def __init__(self, *listings):
+        self.listings, self.calls = list(listings), []
+
+    def get(self, url, params=None, **kw):
+        self.calls.append(url if not params else f"{url}?{params['station']}/{params['year']}")
+        if url == climate.IEM_JSON:
+            return self.listings.pop(0) if len(self.listings) > 1 else self.listings[0]
+        return _Resp(PNG)
+
+
+OLD = ("2026-11-01", "202611012300-KBOU-CDUS45-CLIDEN")      # yesterday's afternoon report
+MINE = ("2026-11-01", "202611020730-KBOU-CDUS45-CLIDEN")     # the morning report the push is for
 
 
 def test_push_links_the_dashboard_copy_with_public_url(db, cfg, channels, sent, tmp_path, monkeypatch):
@@ -149,28 +178,40 @@ def test_push_links_the_dashboard_copy_with_public_url(db, cfg, channels, sent, 
     n = sent[0]
     assert n.image_url.startswith("https://wx.example.com/img/") and n.image_name == "climate.png"
 
-    calls = []
     monkeypatch.setattr(climate.time, "sleep", lambda s: None)
-    replies = iter([_Resp(b"not yet", ok=False), _Resp(PNG)])
-
-    def fake_get(self, url, **kw):
-        calls.append(url)
-        return next(replies)
-    monkeypatch.setattr(climate.requests.Session, "get", fake_get)
+    fake = FakeIEM(listing(OLD), listing(MINE))
+    monkeypatch.setattr(climate.requests.Session, "get", lambda self, url, **kw: fake.get(url, **kw))
     app = create_app(cfg, db)
     app.testing = True
     c = app.test_client()
     path = "/img/" + n.image_url.rsplit("/", 1)[-1]
-    r = c.get(path)  # no login needed; retried once, then cached
+    r = c.get(path)  # no login needed; waits for IEM to read the report, then caches the picture
     assert r.status_code == 200 and r.data == PNG and r.mimetype == "image/png"
     assert c.get(path).data == PNG
-    assert calls == [climate.image_url(cli())] * 2
+    j = f"{climate.IEM_JSON}?KDEN/2026"
+    assert fake.calls == [j, j, climate.image_url(cli())]
 
 
-def test_fetch_image_gives_up_without_a_png(tmp_path, monkeypatch):
+def test_no_picture_until_iem_has_the_report(tmp_path, monkeypatch):
     monkeypatch.setattr(climate.time, "sleep", lambda s: None)
+    fake = FakeIEM(listing(OLD))
+    assert climate.fetch_image(cli(), str(tmp_path), "(test)", session=fake) is None
+    assert climate.image_url(cli()) not in fake.calls  # never asks for (or keeps) the old picture
+    # A minute or two off the API's issuance time, or a later correction, still counts.
+    later = ("2026-11-01", "202611020732-KBOU-CDUS45-CLIDEN")
+    assert climate.fetch_image(cli(), str(tmp_path), "(test)", session=FakeIEM(listing(OLD, later))) == PNG
 
-    class S:
-        def get(self, url, **kw):
-            return _Resp(b"<html>error</html>")
-    assert climate.fetch_image(cli(), str(tmp_path), "(test)", session=S()) is None
+
+def test_unreadable_listing_still_sends_but_does_not_keep(tmp_path):
+    fake = FakeIEM(_Resp(ok=False))
+    assert climate.fetch_image(cli(), str(tmp_path), "(test)", session=fake) == PNG
+    assert not (tmp_path / "climate").exists()
+    other = _Resp(data={"results": [{"station": "KDSM", "valid": "2026-11-01", "product": "x"}]})
+    assert climate.iem_has_report(cli(), FakeIEM(other), "(test)") is None
+
+
+def test_fetch_image_gives_up_without_a_png(tmp_path):
+    class S(FakeIEM):
+        def get(self, url, params=None, **kw):
+            return listing(MINE) if url == climate.IEM_JSON else _Resp(b"<html>error</html>")
+    assert climate.fetch_image(cli(), str(tmp_path), "(test)", session=S(listing(MINE))) is None
