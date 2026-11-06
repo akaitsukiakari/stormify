@@ -21,6 +21,10 @@ They have their own defaults (NHC_TITLE / NHC_BODY).
 SPC products add: risk (outlook category, e.g. "ENH"), md_number, concerning
 ("Severe potential...Tornado Watch likely"), watch_prob (percent).
 SWPC messages add: scale ("G3"), scale_desc ("G3 (Strong)").
+USGS earthquakes add: magnitude ("4.6"), mag_type ("ml"), depth ("8 km"), place,
+pager (green/yellow/orange/red), felt (Did You Feel It? reports), mmi,
+quake_stats ("Depth 8 km (5 mi) · PAGER yellow · Felt by 120"), and
+quake_time (when it struck, in your time display formats).
 Daily climate reports (CLI) add: climate (high, low, precip and snow with their
 normals and records, one line each).
 """
@@ -45,9 +49,13 @@ SPC_TITLE = "{status_prefix}{headline}"
 SPC_BODY = "{area}\n{threat}{nws_headline}\nUntil {expires}"
 SWPC_TITLE = "{status_prefix}{headline}"
 SWPC_BODY = "{scale_desc}\nUntil {expires}"
-SOURCE_DEFAULTS = {"nhc": (NHC_TITLE, NHC_BODY), "spc": (SPC_TITLE, SPC_BODY), "swpc": (SWPC_TITLE, SWPC_BODY)}
+USGS_TITLE = "{status_prefix}{headline}"
+USGS_BODY = "{quake_stats}\nAt {quake_time}"
+SOURCE_DEFAULTS = {"nhc": (NHC_TITLE, NHC_BODY), "spc": (SPC_TITLE, SPC_BODY), "swpc": (SWPC_TITLE, SWPC_BODY),
+                   "usgs": (USGS_TITLE, USGS_BODY)}
 NHC_VARS = ("storm", "product", "adv", "basin", "pressure", "movement", "location", "watches", "storm_stats")
 PARAM_VARS = ("risk", "md_number", "concerning", "watch_prob", "scale", "scale_desc")
+USGS_VARS = ("magnitude", "mag_type", "depth", "place", "pager", "felt", "mmi", "quake_stats")
 
 TAG_LABELS = {
     "emergency": "EMERGENCY",
@@ -128,6 +136,11 @@ def build_vars(a: Alert, user_tz: str = "America/Denver", display: list[str] | N
         v[name] = str(a.params.get(name, "")) if a.source == "nhc" else ""
     for name in PARAM_VARS:
         v[name] = str(a.params.get(name, "")) if a.source in ("spc", "swpc") else ""
+    for name in USGS_VARS:
+        val = a.params.get(name) if a.source == "usgs" else None
+        v[name] = "" if val in (None, 0) else (f"{val:.1f}" if isinstance(val, float) else str(val))
+    origin = parse_iso(a.params.get("origin") or "") if a.source == "usgs" else None
+    v["quake_time"] = fmt_multi(a.params["origin"], user_tz, a.event_tz, display) if origin else ""
     for name in ("sent", "expires"):
         iso = getattr(a, name) or ""
         dt = parse_iso(iso)

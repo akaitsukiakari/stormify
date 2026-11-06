@@ -1,6 +1,6 @@
 """Source-independent alert model.
 
-Every source (NWS alerts and text products, NHC, SPC, SWPC) produces Alert objects,
+Every source (NWS alerts and text products, NHC, SPC, SWPC, USGS) produces Alert objects,
 and everything downstream (rules, storage, delivery, dashboard) only sees these.
 """
 
@@ -10,17 +10,20 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 # Product "kinds" (tiers), derived from the event name.
-# "Product" is set directly on NWS text products (AFD, HWO, ...), never derived from an event name.
+# "Product" is set directly on NWS text products (AFD, HWO, ...), and "Earthquake" on USGS events,
+# never derived from an event name.
 KINDS = ("Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Message",
-         "Product", "Other")
+         "Product", "Earthquake", "Other")
 
 SEVERITY_RANK = {"Unknown": 0, "Minor": 1, "Moderate": 2, "Severe": 3, "Extreme": 4}
 
 # Tags that make an update "significant" when they newly appear. The NHC ones
-# are watches/warnings in effect in a public advisory, and the major-hurricane class.
+# are watches/warnings in effect in a public advisory, and the major-hurricane class; the USGS ones
+# an earthquake's tsunami flag and PAGER impact levels above green.
 SIGNIFICANT_TAGS = {"emergency", "pds", "considerable", "destructive", "observed",
                     "hurricane-warning", "hurricane-watch", "ts-warning", "ts-watch",
-                    "surge-warning", "surge-watch", "major-hurricane"}
+                    "surge-warning", "surge-watch", "major-hurricane",
+                    "tsunami", "pager-yellow", "pager-orange", "pager-red"}
 
 
 def kind_for_event(event: str, tags: set[str] | None = None) -> str:

@@ -32,7 +32,7 @@ Every alert is on the dashboard anyway, so a dashboard-only catch-all mostly nam
 | `kinds` | Tiers: `Emergency`, `Warning`, `Watch`, `Advisory`, `Statement`, `Outlook`, `Discussion`, `Message`, `Product`, `Other`. An emergency also counts as a Warning. `Product` is an NWS text product (AFD, HWO, RER, ...); scope those by `offices`, since they carry no zones. |
 | `tags_any` | Derived tags, at least one required: `emergency`, `pds`, `considerable`, `destructive`, `observed`, `tornado-possible`, plus the NHC, SPC and SWPC tags below |
 | `product_ids` | AWIPS product IDs, case-insensitive. Narrows only the product types named (the first three letters): `["CLIDEN"]` keeps CLIDEN and skips CLIGXY, CLIMNH and the other CLI reports, while every other event the rule matches is unaffected. Empty = no narrowing. |
-| `scope` | `{"nationwide": true}`, or any mix of `offices` (`"BOU"` or `"KBOU"`), `groups` (names of saved office groups), `zones` (UGC like `COZ039`, `COC005`), `states` (`"CO"`), `same` (FIPS like `"008005"`) |
+| `scope` | `{"nationwide": true}`, or any mix of `offices` (`"BOU"` or `"KBOU"`), `groups` (names of saved office groups), `zones` (UGC like `COZ039`, `COC005`), `states` (`"CO"`), `same` (FIPS like `"008005"`), and for earthquakes `near` (places with a distance, see below) |
 | `filters.include_any` | At least one of these phrases must appear (OR) |
 | `filters.include_all` | All of these phrases must appear (AND) |
 | `filters.exclude_any` | None of these may appear |
@@ -40,6 +40,7 @@ Every alert is on the dashboard anyway, so a dashboard-only catch-all mostly nam
 | `filters.exclude_regex` | No regex may match |
 | `filters.case_sensitive` | Default `false` |
 | `min_hail_in` / `min_wind_mph` | Thresholds from the warning's tagged hail size / wind gust |
+| `min_magnitude` | Earthquakes only: the smallest magnitude to match (see below) |
 | `action` | `push` or `log` |
 | `priority` | 1–5 (ntfy priority). Emergencies are always sent at 5. |
 | `on_update` | `new_only`, `significant` (severity up, new PDS/emergency/observed tag, bigger hail/wind, upgrade; for NHC, stronger winds, a new watch/warning type, or becoming a major hurricane; for SPC outlooks, a higher risk category; for SWPC, a higher G/S/R level), or `any` |
@@ -170,6 +171,40 @@ stormify rules add --user scott --example space  # push G3 and up, log the rest
 SWPC's routine text products come in too, tagged `space` and `forecast` (never `g1`–`g5`, so a forecast doesn't set off a storm rule): `Space Weather Forecast Discussion`, `Space Weather 3-Day Forecast`, `Geomagnetic 3-Day Forecast`, `Space Weather 27-Day Outlook`, `Space Weather Weekly Highlights` and `Space Weather Advisory Outlook`. A message type Stormify doesn't recognize yet still comes in as `Space Weather Message` (kind `Message`).
 
 Turn it off with `swpc_enabled = false`, or just the text products with `swpc_text_products = false`.
+
+## Earthquakes (USGS)
+
+Earthquakes come from the USGS real-time feed (by default magnitude 2.5 and up, worldwide, over the last day), checked every poll. Each one has event `Earthquake` (or `Quarry Blast`, `Explosion` and the like for other seismic events), kind `Earthquake` and office `USGS`. On the map it's a dot sized and colored by magnitude. The headline reads `M4.6 Earthquake · 12 km NE of Ridgecrest, CA`. A quake counts as active for 24 hours.
+
+**Kept apart from weather.** A quake only matches a rule that asks for quakes: one that names the `Earthquake` event or kind, sets `min_magnitude`, or has a `near` scope. So "Everything nationwide" and your office rules never pick up quakes. And a rule with `min_magnitude`, or whose only place is `near`, is an earthquake rule, so weather never matches it. Everything else works the same: tags, text filters, catch-alls, the Rules page search, Try it and the 48-hour check.
+
+Where:
+
+- `near`: a list of places, each `{"name": "Home", "lat": 39.74, "lon": -104.99, "miles": 150}`. A quake within that many miles of any of them matches. The Rules page has **Use my location** to fill one in.
+- `states`: the state in the quake's place (`CA` from "12 km NE of Ridgecrest, CA", `AK` from "Central Alaska").
+- `offices: ["USGS"]` or `nationwide`: every quake in the feed, worldwide.
+
+Tags:
+
+- magnitude: `m2` … `m9` (the whole number: M4.6 is `m4`)
+- PAGER impact level: `pager-green`, `pager-yellow`, `pager-orange`, `pager-red`
+- `tsunami`: USGS's tsunami flag. It means tsunami information may exist, so check tsunami.gov. It isn't a warning itself; tsunami warnings, watches and advisories come through the NWS feed and the NTWC/PTWC products as usual.
+- `felt` (Did You Feel It? reports), `usgs-significant` (USGS's significant list), `us` (in a US state or territory), and `quarry-blast`, `explosion`, ... for events that aren't earthquakes
+
+USGS revises quakes after the fact. A revision that changes the magnitude, location, PAGER level, tsunami flag or review status is an update in the same thread; new felt reports alone aren't. With `on_update: "significant"`, an update pushes when the whole magnitude goes up (M5.9 to M6.1), the PAGER level rises above green, or the tsunami flag appears.
+
+Extra template variables: `magnitude`, `mag_type`, `depth`, `place`, `pager`, `felt`, `mmi`, `quake_stats` (`Depth 8 km (5 mi) · PAGER yellow · Felt by 120 · Shaking MMI 5.2`) and `quake_time` (when it struck). Defaults: title `{headline}`, body `{quake_stats}` / `At {quake_time}`.
+
+```json
+{"name": "Earthquakes near home", "events": ["Earthquake"], "min_magnitude": 3,
+ "scope": {"near": [{"name": "Home", "lat": 39.74, "lon": -104.99, "miles": 200}]}, "priority": 3}
+```
+
+```bash
+stormify rules add --user scott --example quake  # M3+ near Denver, M6.5+ anywhere, tsunami flag or PAGER orange/red
+```
+
+Turn it off with `usgs_enabled = false`, or pick another feed with `usgs_feed` under `[general]`: `1.0_day`, `4.5_day`, `significant_day`, `all_hour` and so on (magnitude `significant`, `4.5`, `2.5`, `1.0` or `all`, window `hour`, `day`, `week` or `month`), or a full URL.
 
 ## Templates
 

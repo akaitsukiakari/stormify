@@ -11,7 +11,7 @@ import requests
 from .config import Config
 from .db import Database, utcnow
 from .engine import Engine
-from .sources import NHCSource, NWSAlertsSource, NWSProductsSource, SPCSource, Source, SWPCSource
+from .sources import NHCSource, NWSAlertsSource, NWSProductsSource, SPCSource, Source, SWPCSource, USGSSource
 from .sources.nws_products import DEFAULT_TYPES
 from .zones import ZoneShapes, load_pending, pending_from_alert
 
@@ -52,6 +52,8 @@ class Poller:
                                          extra_outlooks=cfg.spc_extra_outlooks, known_ids=db.known_alert_ids))
             if cfg.swpc_enabled:
                 sources.append(SWPCSource(cfg.swpc_url, cfg.user_agent, text_products=cfg.swpc_text_products))
+            if cfg.usgs_enabled:
+                sources.append(USGSSource(cfg.usgs_feed, cfg.user_agent))
         self.sources = sources
         self.engine = engine or Engine(db, cfg, tz_lookup=self.nws.zone_timezone)
         self._stop = False
@@ -103,7 +105,7 @@ class Poller:
             log.exception("lite backfill failed")
         self.db.bump_heartbeat(polls=1)
         # The heartbeat (and Home Assistant's "Stormify is down") follows the NWS alerts feed. A hiccup
-        # at SPC, SWPC or NHC is shown as the last error but doesn't mark the whole poller stale.
+        # at SPC, SWPC, NHC or USGS is shown as the last error but doesn't mark the whole poller stale.
         names = [s.name for s in self.sources]
         core = "nws" if "nws" in names else None
         core_failed = any(e.startswith(f"{core}: ") for e in errors) if core else bool(errors)

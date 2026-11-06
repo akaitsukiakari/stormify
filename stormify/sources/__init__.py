@@ -6,5 +6,6 @@ from .nws import NWSAlertsSource
 from .nws_products import NWSProductsSource
 from .spc import SPCSource
 from .swpc import SWPCSource
+from .usgs import USGSSource
 
-__all__ = ["Source", "NWSAlertsSource", "NWSProductsSource", "NHCSource", "SPCSource", "SWPCSource"]
+__all__ = ["Source", "NWSAlertsSource", "NWSProductsSource", "NHCSource", "SPCSource", "SWPCSource", "USGSSource"]

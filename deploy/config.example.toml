@@ -44,6 +44,13 @@ swpc_enabled = true
 # Also SWPC's forecast discussion, 3-day and 27-day outlooks, weekly highlights and advisory outlook.
 swpc_text_products = true
 
+# USGS earthquakes: magnitude 2.5 and up worldwide over the last day, checked every poll. They show
+# on the map as dots sized by magnitude and land under the Earthquake chip. They only match rules
+# that ask for them: "events": ["Earthquake"] with "min_magnitude" and a "near" scope, for example.
+# Other feeds: 1.0_day, 4.5_day, significant_day, all_hour (or a full URL).
+usgs_enabled = true
+usgs_feed = "2.5_day"
+
 # Draw alerts that only list zones (most watches and advisories) by looking up each zone's
 # outline once. This many lookups per poll, so a big watch fills in over a minute or two.
 zone_shapes = true

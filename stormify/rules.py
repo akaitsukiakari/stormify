@@ -31,6 +31,7 @@ Rule JSON shape (all keys optional except name):
   },
   "min_hail_in": 1.0,          # optional hail threshold (inches)
   "min_wind_mph": 70,          # optional wind threshold
+  "min_magnitude": 4.5,        # earthquakes only (see below)
   "action": "push",            # push | log
   "priority": 4,               # 1 (min) .. 5 (max), maps to ntfy priority
   "on_update": "significant",  # new_only | significant | any
@@ -44,6 +45,14 @@ rule's products and scope fit it, e.g. "everything else from BOU goes to the
 dashboard" or "everything else from BOU pushes quietly". An alert a regular
 rule covers but its text filters stop still counts as covered, so a catch-all
 never pushes something a filter was meant to keep off the phone.
+
+Earthquakes (USGS, kind "Earthquake") are kept apart from weather: a quake only
+matches a rule that asks for quakes, by naming the Earthquake event or kind,
+setting min_magnitude, or giving a "near" scope. And a rule with min_magnitude
+or only a "near" scope is an earthquake rule, so weather never matches it. A
+"near" scope is a list of places, matched by distance from the quake:
+
+  "scope": {"near": [{"name": "Home", "lat": 39.74, "lon": -104.99, "miles": 150}]}
 """
 
 from __future__ import annotations
@@ -54,6 +63,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 from .models import Alert, kind_for_event
+from .sources.usgs import miles_between
 
 VALID_ACTIONS = {"push", "log"}
 VALID_ON_UPDATE = {"new_only", "significant", "any"}
@@ -95,6 +105,7 @@ class Rule:
     filters: dict = field(default_factory=dict)
     min_hail_in: float | None = None
     min_wind_mph: int | None = None
+    min_magnitude: float | None = None
     action: str = "push"
     priority: int = 3
     on_update: str = "significant"
@@ -133,9 +144,21 @@ class Rule:
         for key in ("product_ids", "exclude_events"):
             if not isinstance(getattr(self, key), list):
                 raise RuleError(f"{self.name}: {key} must be a list")
-        for key in ("offices", "zones", "states", "same", "groups"):
+        for key in ("offices", "zones", "states", "same", "groups", "near"):
             if not isinstance(self.scope.get(key, []), list):
                 raise RuleError(f"{self.name}: scope {key} must be a list")
+        for p in self.scope.get("near", []):
+            try:
+                lat, lon, miles = float(p["lat"]), float(p["lon"]), float(p["miles"])
+            except (TypeError, KeyError, ValueError) as e:
+                raise RuleError(f"{self.name}: each near place needs lat, lon and miles") from e
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180 and miles > 0):
+                raise RuleError(f"{self.name}: near place {p.get('name') or ''} is out of range")
+        if self.min_magnitude is not None:
+            try:
+                self.min_magnitude = float(self.min_magnitude)
+            except (TypeError, ValueError) as e:
+                raise RuleError(f"{self.name}: min_magnitude must be a number") from e
         cs = bool(self.filters.get("case_sensitive", False))
         for key in ("include_regex", "exclude_regex"):
             for pat in self.filters.get(key, []):
@@ -145,7 +168,25 @@ class Rule:
                     raise RuleError(f"{self.name}: bad regex {pat!r}: {e}") from e
 
     # ---- matching ------------------------------------------------------
+    @property
+    def wants_quakes(self) -> bool:
+        """Asks for earthquakes: names the event or kind, sets a magnitude, or has a near scope."""
+        return ("earthquake" in {e.lower() for e in self.events} or "earthquake" in {k.lower() for k in self.kinds}
+                or self.min_magnitude is not None or bool((self.scope or {}).get("near")))
+
+    @property
+    def quakes_only(self) -> bool:
+        """An earthquake rule: a magnitude threshold, or a near scope and no other places."""
+        s = self.scope or {}
+        other = s.get("nationwide") or any(s.get(k) for k in ("offices", "zones", "states", "same", "groups"))
+        return self.min_magnitude is not None or (bool(s.get("near")) and not other)
+
     def matches_product(self, a: Alert) -> bool:
+        if a.kind == "Earthquake":
+            if not self.wants_quakes:
+                return False
+        elif self.quakes_only:
+            return False
         if self.events and a.event.lower() not in {e.lower() for e in self.events}:
             return False
         if self.exclude_events and a.event.lower() in {e.lower() for e in self.exclude_events}:
@@ -182,6 +223,12 @@ class Rule:
         same = {str(x).zfill(6) for x in s.get("same", [])}
         if same and same.intersection(a.same):
             return True
+        near = s.get("near") or []
+        if near and a.kind == "Earthquake":
+            lat, lon = (a.params or {}).get("lat"), (a.params or {}).get("lon")
+            if lat is not None and lon is not None and any(
+                    miles_between(float(p["lat"]), float(p["lon"]), lat, lon) <= float(p["miles"]) for p in near):
+                return True
         return False
 
     def passes_filters(self, a: Alert) -> tuple[bool, str]:
@@ -213,6 +260,10 @@ class Rule:
             return False, f"hail below {self.min_hail_in} in"
         if self.min_wind_mph is not None and (a.wind_mph or 0) < int(self.min_wind_mph):
             return False, f"wind below {self.min_wind_mph} mph"
+        if self.min_magnitude is not None:
+            mag = (a.params or {}).get("mag")
+            if mag is None or float(mag) < float(self.min_magnitude):
+                return False, f"magnitude below {self.min_magnitude:g}"
         return True, ""
 
 

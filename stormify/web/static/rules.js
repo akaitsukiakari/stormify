@@ -6,7 +6,8 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const OFFICES = window.STORMIFY_OFFICES || {};
-  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Message", "Product", "Other"];
+  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Message", "Product", "Earthquake", "Other"];
+  const QUAKE_EVENTS = new Set(["Earthquake", "Quarry Blast", "Explosion"]);
   // Common products, so a rule can name one before it has ever shown up in your feed.
   const EVENT_CATALOG = [
     "Tornado Warning", "Tornado Watch", "Severe Thunderstorm Warning", "Severe Thunderstorm Watch",
@@ -37,6 +38,7 @@
     "SPC Day 2 Fire Weather Outlook Discussion", "SPC Day 3-8 Fire Weather Outlook Discussion",
     "SPC Day 4-8 Convective Outlook Discussion", "WPC Mesoscale Precipitation Discussion",
     "Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report",
+    "Earthquake", "Quarry Blast", "Explosion",
   ];
   const TAGS = [
     ["emergency", "Emergency wording"], ["pds", "PDS, particularly dangerous situation (NWS watches and warnings; for SPC MDs use a text filter)"], ["considerable", "Considerable damage threat"],
@@ -63,6 +65,11 @@
     ["ts-warning", "NHC: TS warning in effect"], ["ts-watch", "NHC: TS watch in effect"], ["surge-warning", "NHC: surge warning"],
     ["surge-watch", "NHC: surge watch"], ["major-hurricane", "NHC: major hurricane"], ["ww-changes", "NHC: watches/warnings changed"],
     ["atlantic", "NHC: Atlantic"], ["east-pacific", "NHC: Eastern Pacific"], ["central-pacific", "NHC: Central Pacific"],
+    ...[2, 3, 4, 5, 6, 7, 8, 9].map((m) => [`m${m}`, `Earthquake magnitude ${m} to ${m}.9`]),
+    ["pager-green", "Earthquake PAGER green: little or no damage expected"], ["pager-yellow", "Earthquake PAGER yellow: some damage possible"],
+    ["pager-orange", "Earthquake PAGER orange: significant damage likely"], ["pager-red", "Earthquake PAGER red: extensive damage likely"],
+    ["tsunami", "Earthquake tsunami flag (check tsunami.gov; not a warning itself)"], ["felt", "Earthquake felt reports (Did You Feel It?)"],
+    ["usgs-significant", "Earthquake in USGS's significant list"], ["us", "Earthquake in a US state or territory"],
   ];
   const PRIORITY = { 5: "5 · urgent", 4: "4 · high", 3: "3 · default", 2: "2 · low", 1: "1 · min" };
   const ON_UPDATE = { new_only: "New alerts only", significant: "Also significant updates", any: "Every update" };
@@ -88,6 +95,7 @@
     Discussion: "SPC mesoscale discussions.",
     Product: "NWS text products: AFD, HWO, PNS and the rest from every office your rules name, plus SPC watch text, SPC fire weather discussions, WPC MPDs and tsunami messages nationwide.",
     Message: "Messages that aren't a watch or warning, like Civil Emergency Messages and new kinds of SWPC messages.",
+    Earthquake: "USGS earthquakes (and quarry blasts). They only match rules that ask for them.",
     Other: "Anything else, like NHC updates and discussions.",
   };
   const PRODUCTS = new Set(["Area Forecast Discussion", "Record Event Report", "Public Information Statement", "Local Storm Report", "Hazardous Weather Outlook",
@@ -97,6 +105,7 @@
     "Geomagnetic 3-Day Forecast": "Outlook", "Space Weather 27-Day Outlook": "Outlook", "Space Weather Weekly Highlights": "Product",
     "Space Weather Advisory Outlook": "Outlook" };
   function kindOf(e) {
+    if (QUAKE_EVENTS.has(e)) return "Earthquake";
     if (PRODUCTS.has(e)) return "Product";
     if (SWPC_TEXT[e]) return SWPC_TEXT[e];
     if (e === "Mesoscale Discussion") return "Discussion";
@@ -106,6 +115,7 @@
     return m ? m[1][0].toUpperCase() + m[1].slice(1) : "Other";
   }
   function sourceOf(e) {
+    if (QUAKE_EVENTS.has(e)) return "U.S. Geological Survey (office USGS)";
     if (/^(Day \d|SPC )/.test(e) || e === "Mesoscale Discussion") return "Storm Prediction Center (office SPC)";
     if (/^WPC /.test(e)) return "Weather Prediction Center (office WPC)";
     if (/^Tsunami/.test(e)) return "local NWS offices and the tsunami warning centers (NTWC, PTWC)";
@@ -132,14 +142,16 @@
     NHC: "hurricane tropical storm cyclone", CPHC: "hurricane tropical pacific",
     SWPC: "geomagnetic aurora solar radiation radio blackout space weather forecast discussion",
     WPC: "mesoscale precipitation discussion mpd heavy rain flooding", NTWC: "tsunami", PTWC: "tsunami pacific",
+    USGS: "earthquake quake seismic magnitude tsunami",
   };
   function finderCatalog() {
     const out = [];
     for (const c of uniq([...Object.keys(OFFICES), ...(meta.offices || [])])) {
       const where = OFFICES[c] || "";
-      const center = /Center$/.test(where);
+      const center = /Center$/.test(where) || c === "USGS";
       out.push({ type: "office", value: c, title: where ? `${c} · ${where}` : c, words: `${c} ${where} ${CENTER_WORDS[c] || ""}`,
-        desc: center ? `National center. Scope a rule to ${c} to get its products.` : "NWS forecast office. Scope a rule to it for alerts from that office, plus SPC outlooks and MDs that cover it." });
+        desc: c === "USGS" ? "Earthquakes, worldwide. Scope a rule to USGS (with the Earthquake event, kind or a magnitude) for every quake in the feed."
+          : center ? `National center. Scope a rule to ${c} to get its products.` : "NWS forecast office. Scope a rule to it for alerts from that office, plus SPC outlooks and MDs that cover it." });
     }
     for (const e of uniq([...EVENT_CATALOG, ...(meta.events || [])])) {
       out.push({ type: "event", value: e, title: e, words: `${e} ${kindOf(e)} ${sourceOf(e)}`, desc: `Alert type. Kind: ${kindOf(e)}. From ${sourceOf(e)}.` });
@@ -169,9 +181,11 @@
   function starterFor(item) {
     const v = item.value;
     if (item.type === "office") {
+      if (v === "USGS") return { name: "Earthquakes M4.5+ worldwide", events: ["Earthquake"], min_magnitude: 4.5, scope: { offices: ["USGS"] }, priority: 3 };
       const where = OFFICES[v] && !/Center$/.test(OFFICES[v]) ? OFFICES[v] : v;
       return { name: `Everything from ${where}`, scope: { offices: [v] }, priority: 3 };
     }
+    if (item.type === "event" && QUAKE_EVENTS.has(v)) return { name: `${v}s M4.5+ near …`, events: [v], min_magnitude: 4.5, scope: { near: [] } };
     if (item.type === "event") return { name: `${v}, nationwide`, events: [v], scope: { nationwide: true } };
     if (item.type === "tag") return { name: (TAGS.find(([t]) => t === v) || [v, v])[1].split(" (")[0], tags_any: [v], scope: { nationwide: true } };
     if (item.type === "kind") return { name: `${v}, …`, kinds: [v], scope: { offices: [] } };
@@ -254,6 +268,9 @@
     include_regex: "Advanced: a regular expression that has to match.",
     exclude_regex: "Advanced: don't push if this regular expression matches.",
     thresholds: "Only push warnings that list at least this hail size or wind gust. Leave empty to ignore.",
+    quakes: "Earthquakes stay out of your weather rules. A quake only matches a rule that names the Earthquake event or kind, sets a magnitude here, or has a place below. A rule with a magnitude, or with only places for its Where, never matches weather.",
+    min_magnitude: "Smallest magnitude to match. Smaller quakes the rule covers go to the dashboard with the reason. Leave empty for any size.",
+    near: "Match quakes within this many miles of a place. Use your location fills in where you are now (the browser asks first). Nationwide, states (from the quake's place, like CA) and the USGS office also work.",
     templates: "Change what the notification says. Put the important part first; Android cuts off long notifications.",
   };
   const tip = (k) => `<span class="tip" tabindex="0" role="note" aria-label="${esc(TIPS[k])}" data-tip="${esc(TIPS[k])}">?</span>`;
@@ -267,6 +284,8 @@
       scope: { nationwide: true }, priority: 4 },
     quiet: { name: "Keep off my phone: …", action: "log", scope: { offices: [] } },
     rest: { name: "Everything else from …", action: "log", fallback: true, scope: { offices: [] } },
+    "quake-near": { name: "Earthquakes near Denver", events: ["Earthquake"], min_magnitude: 3, scope: { near: [{ name: "Denver", lat: 39.74, lon: -104.99, miles: 200 }] }, priority: 3, on_update: "significant" },
+    "quake-big": { name: "Big earthquakes worldwide", events: ["Earthquake"], min_magnitude: 6.5, scope: { offices: ["USGS"] }, priority: 3, on_update: "significant" },
   };
 
   // ---- helpers --------------------------------------------------------------------
@@ -418,6 +437,7 @@
     if ((r.kinds || []).length) parts.push("any " + r.kinds.join("/").toLowerCase());
     if ((r.tags_any || []).length) parts.push("tagged " + listShort(r.tags_any, 3));
     if ((r.product_ids || []).length) parts.push("only " + listShort(r.product_ids, 3) + " of their type");
+    if (r.min_magnitude != null) parts.push(`M${r.min_magnitude}+ quakes`);
     let what = parts.join(" · ") || "Any product";
     if ((r.exclude_events || []).length) what += " · except " + listShort(r.exclude_events, 2);
     return r.fallback ? `Catch-all: ${parts.length ? what : "anything"} no other rule covers` : what;
@@ -431,12 +451,13 @@
     if ((s.states || []).length) parts.push("states " + listShort(s.states, 6));
     if ((s.zones || []).length) parts.push(`${s.zones.length} zone${s.zones.length > 1 ? "s" : ""}`);
     if ((s.same || []).length) parts.push(`${s.same.length} county code${s.same.length > 1 ? "s" : ""}`);
+    (s.near || []).forEach((p) => parts.push(`within ${p.miles} mi of ${p.name || `${p.lat}, ${p.lon}`}`));
     return parts.length ? { text: parts.join(" · "), warn: false } : { text: "No locations, so it matches nothing", warn: true };
   }
   function hasFilters(r) {
     const f = r.filters || {};
     return ["include_any", "include_all", "exclude_any", "include_regex", "exclude_regex"].some((k) => (f[k] || []).length)
-      || r.min_hail_in != null || r.min_wind_mph != null;
+      || r.min_hail_in != null || r.min_wind_mph != null || r.min_magnitude != null;
   }
 
   // ---- rule list ----------------------------------------------------------------------
@@ -532,6 +553,19 @@
           </div>
         </fieldset>
 
+        <details class="wide quakes" ${r.min_magnitude != null || (s.near || []).length || (r.events || []).some((e) => QUAKE_EVENTS.has(e)) || (r.kinds || []).includes("Earthquake") ? "open" : ""}>
+          <summary>Earthquakes ${tip("quakes")}</summary>
+          <label class="mag"><span>Magnitude at least ${tip("min_magnitude")}</span><input type="number" step="0.1" min="0" max="10" data-k="min_magnitude" value="${r.min_magnitude ?? ""}"></label>
+          <div class="near"><span>Within miles of ${tip("near")}</span>
+            <div data-near-list></div>
+            <div class="near-actions">
+              <button type="button" data-near-add>+ Add a place</button>
+              <button type="button" data-near-here>Use my location</button>
+              <span class="muted small" data-near-note></span>
+            </div>
+          </div>
+        </details>
+
         <fieldset class="wide"><legend>Text filters <span class="muted small">(one per line; a rule that fails these logs instead of pushing)</span></legend>
           <div class="grid3">
             <label><span>Contains any of ${tip("include_any")}</span><textarea data-f="include_any" rows="3">${lines("include_any")}</textarea></label>
@@ -588,6 +622,53 @@
       row.querySelector(".preview")?.remove();
     };
     const touched = () => { setDirty(); refreshHead(); };
+
+    // Earthquake places: name, latitude, longitude, miles. Kept in scope.near.
+    const nearList = el.querySelector("[data-near-list]");
+    const drawNear = () => {
+      nearList.innerHTML = (s.near || []).map((p, i) => `<div class="near-row" data-i="${i}">
+          <input data-near="name" placeholder="Home" value="${esc(p.name || "")}" aria-label="Place name">
+          <input type="number" step="0.01" min="-90" max="90" data-near="lat" placeholder="Latitude" value="${p.lat ?? ""}" aria-label="Latitude">
+          <input type="number" step="0.01" min="-180" max="180" data-near="lon" placeholder="Longitude" value="${p.lon ?? ""}" aria-label="Longitude">
+          <input type="number" step="10" min="1" data-near="miles" placeholder="Miles" value="${p.miles ?? ""}" aria-label="Miles">
+          <button type="button" data-near-del="${i}" aria-label="Remove place">×</button>
+        </div>`).join("");
+    };
+    drawNear();
+    nearList.addEventListener("input", (e) => {
+      const t = e.target, k = t.dataset.near;
+      if (!k) return;
+      e.stopPropagation();
+      const p = s.near[+t.closest(".near-row").dataset.i];
+      p[k] = k === "name" ? t.value : (t.value === "" ? null : parseFloat(t.value));
+      touched();
+    });
+    nearList.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-near-del]");
+      if (!b) return;
+      s.near.splice(+b.dataset.nearDel, 1);
+      drawNear(); touched();
+    });
+    el.querySelector("[data-near-add]").addEventListener("click", () => {
+      s.near = [...(s.near || []), { name: "", lat: null, lon: null, miles: 150 }];
+      drawNear(); touched();
+    });
+    el.querySelector("[data-near-here]").addEventListener("click", (e) => {
+      const nn = el.querySelector("[data-near-note]");
+      if (!navigator.geolocation) { nn.textContent = "This browser can't share its location."; return; }
+      e.target.disabled = true;
+      nn.textContent = "Asking for your location…";
+      navigator.geolocation.getCurrentPosition((pos) => {
+        e.target.disabled = false;
+        nn.textContent = "";
+        const lat = +pos.coords.latitude.toFixed(2), lon = +pos.coords.longitude.toFixed(2);
+        s.near = [...(s.near || []), { name: "My location", lat, lon, miles: 150 }];
+        drawNear(); touched();
+      }, (err) => {
+        e.target.disabled = false;
+        nn.textContent = err.code === 1 ? "Location wasn't allowed." : "Couldn't get your location.";
+      }, { timeout: 15000, maximumAge: 600000 });
+    });
 
     el.addEventListener("input", (e) => {
       const t = e.target;

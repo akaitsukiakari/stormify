@@ -45,4 +45,5 @@ window.STORMIFY_OFFICES = {
   WPC: "Weather Prediction Center",
   NTWC: "National Tsunami Warning Center",
   PTWC: "Pacific Tsunami Warning Center",
+  USGS: "U.S. Geological Survey",
 };

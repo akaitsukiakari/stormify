@@ -32,20 +32,28 @@
   const RISK_NAMES = { TSTM: "Thunderstorms", MRGL: "Marginal", SLGT: "Slight", ENH: "Enhanced", MDT: "Moderate", HIGH: "High" };
   const KIND_COLORS = {
     Emergency: "#ff2e63", Warning: "#ff6b3d", Watch: "#ffd23f", Advisory: "#5eb3ff",
-    Statement: "#b4a7ff", Outlook: "#7fd4c1", Discussion: "#4fc3f7", Message: "#8b94a5", Product: "#c9b88a", Other: "#8b94a5",
+    Statement: "#b4a7ff", Outlook: "#7fd4c1", Discussion: "#4fc3f7", Message: "#8b94a5", Product: "#c9b88a",
+    Earthquake: "#f2c12e", Other: "#8b94a5",
   };
-  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Product"];
+  const KINDS = ["Emergency", "Warning", "Watch", "Advisory", "Statement", "Outlook", "Discussion", "Product", "Earthquake"];
+  // Earthquakes: a dot sized and colored by magnitude, one legend row per band.
+  const isQuake = (a) => a.source === "usgs";
+  const magOf = (a) => +((a.params || {}).mag) || 0;
+  const QUAKE_BANDS = [[7, "#8b0000", "M7+"], [6, "#e0301e", "M6–6.9"], [5, "#ff7f0e", "M5–5.9"], [4, "#f2c12e", "M4–4.9"], [-9, "#e8e07a", "Under M4"]];
+  const quakeBand = (a) => QUAKE_BANDS.find(([m]) => magOf(a) >= m);
+  const quakeRadius = (a) => Math.max(4, Math.min(20, 3 + 2.6 * (magOf(a) - 2.5)));
   const TAG_LABELS = {
     emergency: "EMERGENCY", pds: "PDS", considerable: "CONSIDERABLE", destructive: "DESTRUCTIVE",
     observed: "OBSERVED", "tornado-possible": "TOR POSSIBLE", test: "TEST",
     "major-hurricane": "MAJOR", "hurricane-warning": "HU WARNING", "surge-warning": "SURGE WARNING",
     "ts-warning": "TS WARNING", "hurricane-watch": "HU WATCH", "surge-watch": "SURGE WATCH", "ts-watch": "TS WATCH",
     "watch-likely": "WATCH LIKELY", "risk-mdt": "MODERATE RISK", "risk-high": "HIGH RISK",
+    tsunami: "TSUNAMI FLAG", "pager-yellow": "PAGER YELLOW", "pager-orange": "PAGER ORANGE", "pager-red": "PAGER RED",
     g3: "G3", g4: "G4", g5: "G5", s3: "S3", s4: "S4", s5: "S5", r3: "R3", r4: "R4", r5: "R5",
   };
-  // NHC, SPC and SWPC products read better by their own title ("Tropical Storm Isaias Public Advisory
-  // Number 4", "Day 1: Enhanced risk", "Watch: Geomagnetic Storm Category G3 Predicted").
-  const TITLED = new Set(["nhc", "spc", "swpc"]);
+  // NHC, SPC, SWPC and USGS products read better by their own title ("Tropical Storm Isaias Public
+  // Advisory Number 4", "Day 1: Enhanced risk", "M4.6 Earthquake · 12 km NE of Ridgecrest, CA").
+  const TITLED = new Set(["nhc", "spc", "swpc", "usgs"]);
   const labelFor = (a) => (TITLED.has(a.source) && a.headline) ? a.headline : a.event;
   const isOutlook = (a) => a.source === "spc" && a.kind === "Outlook";
   const topRisk = (a) => ((a.params || {}).risk_labels || []).slice(-1)[0];
@@ -57,6 +65,7 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const colorFor = (a) => (a.tags || []).includes("emergency") ? "#ff2e63"
+    : isQuake(a) ? quakeBand(a)[1]
     : (isOutlook(a) && RISK_COLORS[topRisk(a)]) || EVENT_COLORS[a.event] || KIND_COLORS[a.kind] || "#8b94a5";
 
   let meta = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, time_display: ["local", "event", "zulu"] };
@@ -432,12 +441,17 @@
     if (selected && layers.has(selected) && !map._userMoved) {
       map.fitBounds(layers.get(selected).bounds, { maxZoom: 9, padding: [30, 30] });
     } else if (polyGroup.getLayers().length && !map._userMoved) {
-      map.fitBounds(polyGroup.getBounds(), { maxZoom: 7, padding: [20, 20] });
+      // Earthquakes come from all over the world; fit the view to the weather unless quakes are all there is.
+      const drawnNow = polyGroup.getLayers();
+      const weather = drawnNow.filter((l) => !isQuake(l.alert));
+      const fit = L.latLngBounds([]);
+      (weather.length ? weather : drawnNow).forEach((l) => { if (l.bounds && l.bounds.isValid()) fit.extend(l.bounds); });
+      if (fit.isValid()) map.fitBounds(fit, { maxZoom: 7, padding: [20, 20] });
     }
   }
 
   let newestDay1 = null;
-  const ORDER = { Watch: 0, Advisory: 1, Statement: 1, Discussion: 1, Warning: 2, Emergency: 3 };
+  const ORDER = { Watch: 0, Advisory: 1, Statement: 1, Discussion: 1, Warning: 2, Emergency: 3, Earthquake: 4 };
   const drawOrder = (a) => isOutlook(a) ? -1 : (ORDER[a.kind] ?? 1);
 
   function addLayer(a) {
@@ -466,7 +480,10 @@
       ...opts,
       style,
       // Storm centers (NHC advisories) are points; their forecast track is a line.
-      pointToLayer: (_, latlng) => L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
+      // Earthquakes are points too, sized by magnitude with a dark edge so they stand out on radar.
+      pointToLayer: (_, latlng) => isQuake(a)
+        ? L.circleMarker(latlng, { radius: quakeRadius(a), color: "#1a1a1a", weight: 1.5, fillColor: c, fillOpacity: 0.85 })
+        : L.circleMarker(latlng, { radius: 7, color: c, weight: 2, fillColor: c, fillOpacity: 0.7 }),
     });
     layer.on("click", (e) => { L.DomEvent.stopPropagation(e); mapTap(layer.alert); });
     layer.bindTooltip(`${esc(labelFor(a))} · ${esc(officeLabel(a.office))}`, { sticky: true });
@@ -488,6 +505,7 @@
   function alertKey(a) {
     const storm = a.source === "nhc" ? ((a.params || {}).storm || a.event) : "";
     if (storm) return "nhc:" + storm;
+    if (isQuake(a)) return "quake:" + quakeBand(a)[2];
     return a.event + ((a.tags || []).includes("emergency") ? ":emergency" : "");
   }
 
@@ -538,7 +556,8 @@
     const push = a.action === "push" ? `<span class="badge push">PUSHED</span>` : "";
     const threat = [a.hail_in ? `${a.hail_in}" hail` : "", a.wind_mph ? `${a.wind_mph} mph` : ""].filter(Boolean).join(" · ");
     const sent = fmtTimes(a.sent, a.event_tz);
-    const exp = fmtTimes(a.expires || a.ends, a.event_tz);
+    // A quake's expiry only means how long it stays "active" here; it isn't USGS's.
+    const exp = isQuake(a) ? "" : fmtTimes(a.expires || a.ends, a.event_tz);
     return `<div class="card${cls}" data-id="${esc(a.id)}" style="--c:${colorFor(a)}">
       <div class="title">${tags}${esc(labelFor(a))} <span class="muted">· ${esc(officeLabel(a.office) || a.sender_name)}</span> ${upd} ${push}${a.geometry ? `<button class="jump" title="Show on the map">${PIN}Map</button>` : ""}</div>
       <div class="meta">${threat ? esc(threat) + " · " : ""}${esc(a.area_desc)}</div>
@@ -723,6 +742,7 @@
   }
 
   function swatch(e) {
+    if (e.quake) return `<svg viewBox="0 0 28 14" width="28" height="14"><circle cx="14" cy="7" r="5.5" fill="${e.color}" fill-opacity="0.85" stroke="#1a1a1a" stroke-width="1.5"/></svg>`;
     if (e.storm) {
       return `<svg viewBox="0 0 28 14" width="28" height="14"><line x1="7" y1="7" x2="27" y2="7" stroke="${e.color}" stroke-width="2.5"/>`
         + `<circle cx="7" cy="7" r="5" fill="${e.color}" fill-opacity="0.7" stroke="${e.color}" stroke-width="2"/></svg>`;
@@ -758,6 +778,11 @@
       const key = alertKey(a);
       const row = rows.get(key);
       if (row) { row.n += 1; if ((a.params || {}).geometry_source === "zones") row.zoned = true; continue; }
+      if (isQuake(a)) {
+        const [m, color, band] = quakeBand(a);
+        rows.set(key, { key, quake: true, kind: a.kind, color, n: 1, zoned: false, label: `Earthquakes ${band}`, rank: 5 - m / 100 });
+        continue;
+      }
       rows.set(key, {
         key, storm, kind: a.kind, color: colorFor(a), n: 1, zoned: (a.params || {}).geometry_source === "zones",
         label: storm || (emergency && !/emergency/i.test(a.event) ? `${a.event} (emergency)` : a.event),
