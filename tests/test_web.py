@@ -296,3 +296,24 @@ def test_catch_all_matches_skip_what_other_rules_cover(client):
     # A turned-off rule leaves its alerts to the catch-all.
     off = client.post("/api/rules/matches", json={"rule": rest, "others": [{**warnings, "enabled": False}]}).json
     assert len(off["matches"]) == len(alone)
+
+
+def test_remove_alert_from_its_rule_and_undo(client):
+    from fixtures import by_id
+    from stormify.sources.nws import parse_feature
+    login(client)
+    rules = [{"name": "BOU all", "scope": {"offices": ["BOU"]}},
+             {"name": "Tornadoes", "events": ["Tornado Warning"], "scope": {"nationwide": True}, "enabled": False}]
+    assert client.put("/api/rules", json={"rules": rules}).status_code == 200
+    aid = parse_feature(by_id("tor1")).id
+    opts = client.get("/api/alert?id=" + aid).json["remove"]
+    assert [o["name"] for o in opts] == ["BOU all"]
+    stale = client.post("/api/alert/remove", json={"id": aid, "index": 0, "name": "Renamed", "how": "event"})
+    assert stale.status_code == 409
+    r = client.post("/api/alert/remove", json={"id": aid, "index": 0, "name": "BOU all", "how": "event"}).json
+    assert r["change"] == "excluded" and r["still"] == []
+    saved = client.get("/api/rules").json["rules"]
+    assert saved[0]["exclude_events"] == ["Tornado Warning"]
+    assert client.get("/api/alert?id=" + aid).json["remove"] == []
+    assert client.put("/api/rules", json={"rules": r["undo"]}).status_code == 200
+    assert "exclude_events" not in client.get("/api/rules").json["rules"][0]

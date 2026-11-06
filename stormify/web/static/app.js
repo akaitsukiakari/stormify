@@ -68,6 +68,8 @@
   let shown = LIST_PAGE;
   const bodies = new Map();  // alert id -> full text, fetched when a card or sheet opens
   const pictures = new Map();  // alert id -> climate report infographic URL (IEM), from the same fetch
+  const removals = new Map();  // alert id -> the rules that push it now, for "Remove from my alerts"
+  const removeNotes = new Map();  // alert id -> { msg, undo } after taking it out of a rule
   const mobile = window.matchMedia("(max-width: 900px)");
   let selected = new URLSearchParams(location.search).get("alert");
   // Opened from a notification (?alert=): once the first load lands, bring that alert up front
@@ -543,12 +545,76 @@
       <div class="times"><span class="muted">${esc(dayLabel(a.sent))}</span> ${esc(sent)}${exp ? ` <span class="muted">→ until</span> ${esc(exp)}` : ""}</div>
       ${a.reason ? `<div class="reason">${esc(a.reason)}</div>` : ""}
       ${pictures.get(a.id) ? pictureHtml(pictures.get(a.id)) : ""}
+      <div class="remove">${removeHtml(a.id)}</div>
       <pre>${bodies.has(a.id) ? esc(bodies.get(a.id)) : "Loading full text…"}</pre>
     </div>`;
   }
 
   function pictureHtml(url) {
     return `<a class="picture" href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="Climate report infographic" loading="lazy"></a>`;
+  }
+
+  // ---- "Remove from my alerts": take an opened alert out of the rule that pushed it ----------------
+  function removeHtml(id) {
+    const note = removeNotes.get(id);
+    const opts = removals.get(id) || [];
+    let html = note ? `<div class="remove-note">${esc(note.msg)}${note.undo ? ` <button type="button" class="link" data-undo>Undo</button>` : ""}</div>` : "";
+    if (!opts.length) return html;
+    const choices = opts.map((o, i) => {
+      const rule = `“${esc(o.name)}”`;
+      const ev = o.turns_off
+        ? `Turn off ${rule} <span class="muted">(${esc(o.event)} is all it covers)</span>`
+        : `Stop ${esc(o.event)} alerts from ${rule}`;
+      return `<button type="button" data-how="event" data-i="${i}">${ev}</button>`
+        + (o.office ? `<button type="button" data-how="office" data-i="${i}">Stop everything from ${esc(officeLabel(o.office) || o.office)} in ${rule}</button>` : "");
+    }).join("");
+    return html + `<button type="button" class="remove-open">${note && note.undo ? "Remove from another rule" : "Remove from my alerts"}</button>
+      <div class="remove-choices" hidden>${choices}<span><button type="button" class="link" data-cancel>Cancel</button> · <a href="/rules">Edit rules</a></span></div>`;
+  }
+  function drawRemove(id) {
+    document.querySelectorAll(`[data-id="${CSS.escape(id)}"] .remove`).forEach((el) => { el.innerHTML = removeHtml(id); });
+  }
+  async function refreshRemove(id) {
+    try {
+      const r = await getJSON("/api/alert?id=" + encodeURIComponent(id));
+      if (r.ok) removals.set(id, (await r.json()).remove || []);
+    } catch { /* keep what's there */ }
+    drawRemove(id);
+  }
+  async function onRemoveClick(e, id) {
+    const box = e.target.closest(".remove");
+    if (e.target.closest(".remove-open")) { box.querySelector(".remove-choices").hidden = false; e.target.hidden = true; return; }
+    if (e.target.closest("[data-cancel]")) { drawRemove(id); return; }
+    const undo = e.target.closest("[data-undo]");
+    const pick = e.target.closest("button[data-how]");
+    if (!undo && !pick) return;
+    box.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    try {
+      if (undo) {
+        const r = await getJSON("/api/rules", { method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rules: removeNotes.get(id).undo }) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Could not undo.");
+        removeNotes.set(id, { msg: "Put back the way it was." });
+      } else {
+        const o = removals.get(id)[+pick.dataset.i];
+        const r = await getJSON("/api/alert/remove", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, index: o.index, name: o.name, how: pick.dataset.how }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || "Could not change the rule.");
+        const rule = `“${j.rule}”`;
+        let msg = j.change === "turned_off" ? `Turned off ${rule}.`
+          : j.change === "office_removed" ? `${j.office} is out of ${rule}.`
+          : `${j.event} won't push from ${rule} any more.`;
+        if (j.still.length) msg += ` Still pushed by ${j.still.map((n) => `“${n}”`).join(", ")}.`;
+        removeNotes.set(id, { msg, undo: j.undo });
+      }
+      removals.clear();  // the rules changed, so every alert's list is stale
+      await refreshRemove(id);
+    } catch (err) {
+      if (err.message === "login") return;
+      toast(err.message);
+      drawRemove(id);
+    }
   }
 
   function renderList() {
@@ -571,6 +637,7 @@
         const j = await r.json();
         const a = j.alert;
         if (j.image) pictures.set(id, j.image);
+        removals.set(id, j.remove || []);
         bodies.set(id, [a.nws_headline, a.description, a.instruction].filter(Boolean).join("\n\n") || a.headline || "");
       } catch (e) {
         if (e.message === "login") return;
@@ -578,6 +645,7 @@
         return;
       }
     }
+    if (!removals.has(id)) { refreshRemove(id); } else { drawRemove(id); }
     document.querySelectorAll(`[data-id="${CSS.escape(id)}"] pre`).forEach((el) => {
       el.textContent = bodies.get(id);
       if (pictures.get(id) && !el.parentNode.querySelector(".picture")) el.insertAdjacentHTML("beforebegin", pictureHtml(pictures.get(id)));
@@ -801,6 +869,7 @@
   $("list").addEventListener("click", (e) => {
     if (e.target.closest("#more")) { shown += LIST_PAGE; renderList(); return; }
     const card = e.target.closest(".card");
+    if (card && e.target.closest(".remove")) { onRemoveClick(e, card.dataset.id); return; }
     if (card && e.target.closest(".jump")) { jump(card.dataset.id); return; }
     if (card && !window.getSelection().toString()) select(card.dataset.id);
   });
@@ -809,6 +878,7 @@
   $("sheet-close").addEventListener("click", () => closeSheet(true));
   $("sheet-body").addEventListener("click", (e) => {
     const card = e.target.closest(".card");
+    if (card && e.target.closest(".remove")) { onRemoveClick(e, card.dataset.id); return; }
     if (card && e.target.closest(".jump")) jump(card.dataset.id);
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(true); });

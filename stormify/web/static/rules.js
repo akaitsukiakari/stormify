@@ -237,6 +237,7 @@
     on_update: "Warnings get updated (extended, expanded, cancelled). New alerts only: one push per alert. Significant: also when it gets worse (bigger hail, a PDS or emergency tag, a higher SPC risk). Every update: each new version.",
     on_cancel: "Send a short CANCELLED note when something you were pushed is cancelled early.",
     fallback: "Catch-all: this rule only gets alerts that none of your other rules cover, like \"everything else from BOU\". If another rule covers an alert but its text filters stop it, the catch-all leaves it alone too.",
+    exclude_events: "Never push these, even when the rest of the rule matches. The Remove from my alerts button on an opened alert adds to this list.",
     events: "Exact product names, like Tornado Warning or Day 1 Hail Outlook. Start typing to pick one. Leave empty to match any event.",
     kinds: "Broad groups instead of exact names. Warning includes emergencies. Outlook covers all SPC outlooks, Product covers text products like AFD, HWO and PNS. Pick none to match any kind.",
     product_ids: "Narrow one kind of text product to specific ones. The ID is in parentheses after the product's name. CLIDEN keeps only Denver airport's daily climate report out of all the CLI reports; everything else this rule matches is left alone. Add CLMDEN to do the same for the monthly ones.",
@@ -417,7 +418,8 @@
     if ((r.kinds || []).length) parts.push("any " + r.kinds.join("/").toLowerCase());
     if ((r.tags_any || []).length) parts.push("tagged " + listShort(r.tags_any, 3));
     if ((r.product_ids || []).length) parts.push("only " + listShort(r.product_ids, 3) + " of their type");
-    const what = parts.join(" · ") || "Any product";
+    let what = parts.join(" · ") || "Any product";
+    if ((r.exclude_events || []).length) what += " · except " + listShort(r.exclude_events, 2);
     return r.fallback ? `Catch-all: ${parts.length ? what : "anything"} no other rule covers` : what;
   }
   function whereOf(r) {
@@ -509,6 +511,7 @@
             <input type="search" class="picker-find" placeholder="Filter the list (tornado, SPC, space…)" autocomplete="off">
             <div class="picker-list"></div>
           </details>
+          <label><span>Except these events ${tip("exclude_events")}</span><div data-chip="exclude_events"></div></label>
           <div class="kinds">Or any of these kinds ${tip("kinds")}
             ${KINDS.map((k) => `<button type="button" class="chip ${(r.kinds || []).includes(k) ? "on" : ""}" data-kind="${k}">${k}</button>`).join("")}
           </div>
@@ -663,6 +666,7 @@
       drawPicker();
     });
 
+    chip("exclude_events", r, "exclude_events", { suggest: eventSuggest, placeholder: "Special Weather Statement…" });
     chip("tags_any", r, "tags_any", { suggest: tagSuggest, normalize: (v) => v.trim().toLowerCase(), placeholder: "pds, g3…" });
     chip("product_ids", r, "product_ids", { normalize: (v) => v.trim().toUpperCase(), placeholder: "CLIDEN…" });
     chip("offices", s, "offices", { suggest: officeSuggest, normalize: normOffice, placeholder: "BOU, Denver…", labelOf: officeLabel });
