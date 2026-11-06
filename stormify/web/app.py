@@ -19,7 +19,7 @@ from ..delivery import DeliveryError, Notification, channels_for_user
 from ..engine import Engine
 from ..health import health
 from ..models import Alert
-from ..rules import RuleError, clean_groups, evaluate, load_rules
+from ..rules import RuleError, apply_removal, clean_groups, evaluate, load_rules, removal_options
 from ..timefmt import DEFAULT_DISPLAY
 from ..zones import ZoneShapes, pending_from_alert
 
@@ -217,8 +217,39 @@ def create_app(cfg: Config, db: Database) -> Flask:
         a = db.get_alert(request.args.get("id") or "")
         if not a:
             return jsonify(error="not found"), 404
+        # The rules that push it now, for the card's "Remove from my alerts".
+        try:
+            remove = removal_options(a, db.list_rules(user["id"]), user["settings"].get("office_groups"))
+        except RuleError:
+            remove = []
         # A daily climate report's infographic, shown in the opened card (loaded straight from IEM).
-        return jsonify(alert=a.to_dict(), image=climate.image_url(a))
+        return jsonify(alert=a.to_dict(), image=climate.image_url(a), remove=remove)
+
+    @app.route("/api/alert/remove", methods=["POST"])
+    @login_required
+    def api_alert_remove(user):
+        """Take an alert out of the rule that pushes it: its event type, or its office, comes off the rule.
+
+        Answers with the rules as they were, so the dashboard can undo it with PUT /api/rules."""
+        body = request.get_json(silent=True) or {}
+        a = db.get_alert(str(body.get("id") or ""))
+        if not a:
+            return jsonify(error="That alert isn't in the archive any more."), 404
+        before = db.list_rules(user["id"])
+        try:
+            index = int(body.get("index"))
+        except (TypeError, ValueError):
+            return jsonify(error="expected a rule index"), 400
+        if not 0 <= index < len(before) or before[index]["name"] != body.get("name"):
+            return jsonify(error="Your rules changed since this alert was opened. Reopen it and try again."), 409
+        try:
+            new, change, still = apply_removal(before, a, index, str(body.get("how") or ""),
+                                               user["settings"].get("office_groups"))
+        except RuleError as e:
+            return jsonify(error=str(e)), 400
+        db.replace_rules(user["id"], new)
+        return jsonify(ok=True, change=change, rule=before[index]["name"], event=a.event, office=a.office,
+                       still=still, undo=[{k: v for k, v in r.items() if k != "id"} for r in before])
 
     @app.route("/api/meta")
     @login_required

@@ -182,3 +182,49 @@ def test_catch_all_leaves_alerts_a_filter_stopped():
     rules[0].enabled = False
     d = evaluate(alert("sps1"), rules)
     assert d.action == "push" and d.matched == ["Rest of BOU, quietly"] and d.priority == 1
+
+
+# ---- exclude_events and "Remove from my alerts" ------------------------------------
+from stormify.rules import apply_removal, removal_options  # noqa: E402
+
+
+def test_exclude_events():
+    r = rule(scope={"offices": ["BOU"]}, exclude_events=["tornado warning"])
+    assert not r.matches_product(alert("tor1"))
+    assert r.matches_product(alert("wwy1"))
+    with pytest.raises(RuleError):
+        rule(exclude_events="Tornado Warning")
+
+
+def test_removal_from_an_any_event_rule_adds_an_exclusion():
+    rules = [{"name": "BOU all", "scope": {"offices": ["BOU", "PUB"]}},
+             {"name": "BOU log", "scope": {"offices": ["BOU"]}, "action": "log"}]
+    opts = removal_options(alert("tor1"), rules)
+    assert opts == [{"index": 0, "name": "BOU all", "event": "Tornado Warning", "turns_off": False, "office": "BOU"}]
+    new, change, still = apply_removal(rules, alert("tor1"), 0, "event")
+    assert change == "excluded" and still == []
+    assert new[0]["exclude_events"] == ["Tornado Warning"] and new[1] == rules[1]
+    assert rules[0].get("exclude_events") is None  # the input isn't changed
+    assert removal_options(alert("tor1"), new) == []
+    assert removal_options(alert("wwy1"), new)  # the rest of the rule still works
+
+
+def test_removal_drops_a_listed_event_or_turns_the_rule_off():
+    rules = [{"name": "two", "events": ["Tornado Warning", "Winter Weather Advisory"], "scope": {"offices": ["BOU"]}},
+             {"name": "one", "events": ["Tornado Warning"], "scope": {"nationwide": True}}]
+    opts = removal_options(alert("tor1"), rules)
+    assert [(o["name"], o["turns_off"], o["office"]) for o in opts] == [("two", False, None), ("one", True, None)]
+    new, change, still = apply_removal(rules, alert("tor1"), 0, "event")
+    assert change == "removed" and new[0]["events"] == ["Winter Weather Advisory"] and still == ["one"]
+    new, change, still = apply_removal(new, alert("tor1"), 1, "event")
+    assert change == "turned_off" and new[1]["enabled"] is False and still == []
+
+
+def test_removal_by_office():
+    rules = [{"name": "home", "scope": {"offices": ["KBOU", "PUB"]}}]
+    new, change, still = apply_removal(rules, alert("tor1"), 0, "office")
+    assert change == "office_removed" and new[0]["scope"]["offices"] == ["PUB"] and still == []
+    with pytest.raises(RuleError):
+        apply_removal(new, alert("tor1"), 0, "office")
+    with pytest.raises(RuleError):
+        apply_removal(rules, alert("tor1"), 5, "event")

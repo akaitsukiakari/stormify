@@ -4,6 +4,8 @@ Every alert is archived to the dashboard no matter what. Rules decide which aler
 
 The easiest way to edit them is the **Rules** page in the dashboard (`/rules`): search offices by code or city, pick several rules and set, add or remove offices on all of them at once, copy one rule's scope onto others, save office groups, and check a draft against the last 48 hours before saving. The search box at the top finds offices (by code or city), alert types, tags and risk levels, says what each is and which rules use it, and starts a rule from it. The **By office** tab shows every rule that covers one office and lets you switch it on or off for each. The JSON below is what that page saves.
 
+**Remove from my alerts:** open a pushed alert on the dashboard (or tap the notification) and the card has a **Remove from my alerts** button. It lists each rule that pushes the alert and offers to stop that event type in the rule: a rule that lists event names drops this one (or turns off, if it was the only one), and a rule that matches any event gets it added to `exclude_events`. A rule that lists several offices also offers to drop the alert's office. Everything else in the rule keeps working, the card says if another rule would still push it, and **Undo** puts the rule back.
+
 A rule matches an alert when its **products** and **scope** match. Then:
 
 - if the alert passes the rule's **filters**, the rule's `action` applies (`push` or `log`)
@@ -26,6 +28,7 @@ Every alert is on the dashboard anyway, so a dashboard-only catch-all mostly nam
 | `name` | Label shown in the feed ("matched …") |
 | `enabled` | `true`/`false` |
 | `events` | Exact event names, case-insensitive. Empty = any. e.g. `["Tornado Warning", "Tornado Watch"]`. NHC, SPC and SWPC products are listed below. |
+| `exclude_events` | Event names this rule never matches, even when everything else fits, e.g. `["Special Weather Statement"]` on an "everything from BOU" rule. |
 | `kinds` | Tiers: `Emergency`, `Warning`, `Watch`, `Advisory`, `Statement`, `Outlook`, `Discussion`, `Message`, `Product`, `Other`. An emergency also counts as a Warning. `Product` is an NWS text product (AFD, HWO, RER, ...); scope those by `offices`, since they carry no zones. |
 | `tags_any` | Derived tags, at least one required: `emergency`, `pds`, `considerable`, `destructive`, `observed`, `tornado-possible`, plus the NHC, SPC and SWPC tags below |
 | `product_ids` | AWIPS product IDs, case-insensitive. Narrows only the product types named (the first three letters): `["CLIDEN"]` keeps CLIDEN and skips CLIGXY, CLIMNH and the other CLI reports, while every other event the rule matches is unaffected. Empty = no narrowing. |
