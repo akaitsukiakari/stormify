@@ -15,6 +15,7 @@ Rule JSON shape (all keys optional except name):
   "name": "Tornado anything, nationwide",
   "enabled": true,
   "events": ["Tornado Warning", "Tornado Watch"],   # exact names, case-insensitive; empty = any
+  "exclude_events": ["Special Weather Statement"],  # never these, even if the rest matches
   "kinds": ["Warning"],                              # Emergency/Warning/Watch/Advisory/Statement/...
   "tags_any": ["pds", "emergency"],                 # derived tags; alert needs at least one
   "product_ids": ["CLIDEN"],                         # AWIPS IDs; of those types (CLI...), only these
@@ -47,6 +48,7 @@ never pushes something a filter was meant to keep off the phone.
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -85,6 +87,7 @@ class Rule:
     name: str
     enabled: bool = True
     events: list[str] = field(default_factory=list)
+    exclude_events: list[str] = field(default_factory=list)
     kinds: list[str] = field(default_factory=list)
     tags_any: list[str] = field(default_factory=list)
     product_ids: list[str] = field(default_factory=list)
@@ -127,8 +130,9 @@ class Rule:
             raise RuleError(f"{self.name}: priority must be 1..5")
         if not isinstance(self.scope, dict):
             raise RuleError(f"{self.name}: scope must be an object")
-        if not isinstance(self.product_ids, list):
-            raise RuleError(f"{self.name}: product_ids must be a list")
+        for key in ("product_ids", "exclude_events"):
+            if not isinstance(getattr(self, key), list):
+                raise RuleError(f"{self.name}: {key} must be a list")
         for key in ("offices", "zones", "states", "same", "groups"):
             if not isinstance(self.scope.get(key, []), list):
                 raise RuleError(f"{self.name}: scope {key} must be a list")
@@ -143,6 +147,8 @@ class Rule:
     # ---- matching ------------------------------------------------------
     def matches_product(self, a: Alert) -> bool:
         if self.events and a.event.lower() not in {e.lower() for e in self.events}:
+            return False
+        if self.exclude_events and a.event.lower() in {e.lower() for e in self.exclude_events}:
             return False
         if self.kinds:
             # An emergency is still a warning: "Tornado Warning" tagged emergency matches both kinds.
@@ -276,3 +282,80 @@ def evaluate(alert: Alert, rules: list[Rule]) -> Decision:
     if matched:
         return Decision("log", "log-only rule: " + ", ".join(matched), [], matched)
     return Decision("log", "; ".join(reasons) or "no rule matched", [], matched)
+
+
+# ---- "Remove from my alerts" -------------------------------------------------
+# From an opened alert, take it out of the rule that pushes it: drop its event type from the rule
+# (or, for a rule that lists several offices, drop its office). The rest of the rule keeps working.
+
+def pushing_rules(alert: Alert, rules: list[Rule]) -> list[Rule]:
+    """The turned-on push rules that would push this alert now (scope, products and filters)."""
+    return [r for r in covering(alert, rules) if r.action == "push" and r.passes_filters(alert)[0]]
+
+
+def _scope_entries(scope: dict) -> int:
+    return sum(len(scope.get(k) or []) for k in ("offices", "groups", "zones", "states", "same"))
+
+
+def removal_options(alert: Alert, rule_dicts: list[dict], groups: dict | None = None) -> list[dict]:
+    """For each rule that pushes the alert: what removing it would do.
+
+    `index` is the rule's place in rule_dicts (the user's full list, in order), so the dashboard can
+    name exactly which one to change even when two rules share a name."""
+    rules = load_rules([{k: v for k, v in d.items() if k != "id"} for d in rule_dicts], groups)
+    out = []
+    for r in pushing_rules(alert, rules):
+        i = rules.index(r)
+        ev = alert.event.lower()
+        rest = [e for e in r.events if e.lower() != ev]
+        opts = {"index": i, "name": r.name, "event": alert.event,
+                # The event is all the rule covers, so taking it out turns the rule off.
+                "turns_off": bool(r.events) and not rest, "office": None}
+        s = r.scope or {}
+        office = _norm_office(alert.office or "")
+        offices = {_norm_office(o) for o in s.get("offices") or []}
+        if office and not s.get("nationwide") and office in offices and _scope_entries(s) > 1:
+            opts["office"] = office
+        out.append(opts)
+    return out
+
+
+def apply_removal(rule_dicts: list[dict], alert: Alert, index: int, how: str,
+                  groups: dict | None = None) -> tuple[list[dict], str, list[str]]:
+    """Take the alert out of rule `index`. Returns (new rule list, what changed, rules still pushing it).
+
+    how: "event" drops the alert's event from the rule (or adds it to exclude_events when the rule
+    matches any event); "office" drops the alert's office from the rule's offices."""
+    if not 0 <= index < len(rule_dicts):
+        raise RuleError("That rule isn't there any more. Reload and try again.")
+    new = [{k: v for k, v in d.items() if k != "id"} for d in rule_dicts]
+    d = copy.deepcopy(new[index])
+    ev = alert.event
+    if how == "event":
+        evs = list(d.get("events") or [])
+        if evs:
+            rest = [e for e in evs if e.lower() != ev.lower()]
+            if rest:
+                d["events"], change = rest, "removed"
+            else:
+                d["enabled"], change = False, "turned_off"
+        else:
+            ex = list(d.get("exclude_events") or [])
+            if ev.lower() not in {e.lower() for e in ex}:
+                ex.append(ev)
+            d["exclude_events"], change = ex, "excluded"
+    elif how == "office":
+        scope = dict(d.get("scope") or {})
+        office = _norm_office(alert.office or "")
+        rest = [o for o in scope.get("offices") or [] if _norm_office(o) != office]
+        if not office or len(rest) == len(scope.get("offices") or []):
+            raise RuleError(f"{d.get('name')} doesn't list {alert.office}.")
+        scope["offices"] = rest
+        d["scope"], change = scope, "office_removed"
+        if not _scope_entries(scope):
+            d["enabled"], change = False, "turned_off"
+    else:
+        raise RuleError("how must be event or office")
+    new[index] = d
+    still = [r.name for r in pushing_rules(alert, load_rules(new, groups))]
+    return new, change, still
