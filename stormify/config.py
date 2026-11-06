@@ -43,6 +43,9 @@ class Config:
     swpc_url: str = "https://services.swpc.noaa.gov/products/alerts.json"
     # Also SWPC's routine text products: forecast discussion, 3-day and 27-day outlooks, weekly highlights.
     swpc_text_products: bool = True
+    # USGS earthquakes: a summary feed name (magnitude_window, e.g. 2.5_day, 4.5_day, all_hour) or a full URL.
+    usgs_enabled: bool = True
+    usgs_feed: str = "2.5_day"
     # Fill in map shapes for alerts that only list zones (most watches and advisories).
     zone_shapes: bool = True
     zone_fetch_per_poll: int = 40

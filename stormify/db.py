@@ -303,7 +303,7 @@ class Database:
     # The only raw parameters the dashboard reads (an NHC storm's name, where a shape came from, an SPC
     # outlook's risk areas). NWS parameters carry long reference lists that used to be most of the
     # payload, so lite rows keep just these.
-    LITE_PARAMS = ("storm", "geometry_source", "risk_labels", "risk_names", "risk_colors", "day")
+    LITE_PARAMS = ("storm", "geometry_source", "risk_labels", "risk_names", "risk_colors", "day", "mag")
 
     def lite_dict(self, d: dict) -> dict:
         """Python version of the lite trim, for a row that didn't come through query_feed_json."""
@@ -314,7 +314,7 @@ class Database:
         if zoned:
             d.pop("geometry", None)
         d["thread_key"] = thread_key
-        if d.get("source") not in ("nhc", "spc", "swpc"):
+        if d.get("source") not in ("nhc", "spc", "swpc", "usgs"):
             d.pop("headline", None)
         d["params"] = {k: params[k] for k in self.LITE_PARAMS if params.get(k) is not None}
         return d
@@ -366,11 +366,11 @@ class Database:
 
     def _lite_sql(self) -> str:
         """SQL that trims an alerts row's data_json to the dashboard's lite JSON."""
-        # NHC, SPC and SWPC products are labeled by their headline; NWS headlines just repeat the card.
+        # NHC, SPC, SWPC and USGS products are labeled by their headline; NWS headlines just repeat the card.
         # A shape built from zone outlines is left out and its zone list kept: the dashboard draws it
         # from /api/zones, so the same county borders aren't resent with every update of every advisory.
         drop = ", ".join([*(f"'$.{k}'" for k in self.LITE_DROP if k != "zones"),
-                          "CASE WHEN source IN ('nhc', 'spc', 'swpc') THEN '$.__keep' ELSE '$.headline' END",
+                          "CASE WHEN source IN ('nhc', 'spc', 'swpc', 'usgs') THEN '$.__keep' ELSE '$.headline' END",
                           "CASE WHEN json_extract(data_json, '$.params.geometry_source') = 'zones'"
                           " THEN '$.geometry' ELSE '$.zones' END"])
         keep = ", ".join(f"'{k}', json_extract(data_json, '$.params.{k}')" for k in self.LITE_PARAMS)

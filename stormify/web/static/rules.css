@@ -196,3 +196,15 @@ details summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 .picker-list legend { font-size: 12px; }
 .picker-list label.check { display: block; font-size: 13px; }
 button.link { background: none; border: 0; padding: 0 2px; color: var(--accent); cursor: pointer; font-size: 12px; }
+
+/* Earthquake settings: magnitude and places to measure distance from. */
+.editor details.quakes { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 4px; }
+.editor details.quakes summary { color: var(--text); font-weight: 600; }
+.editor .quakes .mag { max-width: 200px; }
+.editor .near { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.near-row { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)) auto; gap: 6px; margin: 4px 0; }
+.near-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+@media (max-width: 600px) {
+  .near-row { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
+  .near-row [data-near="name"] { grid-column: 1 / -1; }
+}

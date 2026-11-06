@@ -1,0 +1,59 @@
+{
+  "stormify_rules": 1,
+  "rules": [
+    {
+      "name": "Earthquakes near Denver (M3+)",
+      "events": [
+        "Earthquake"
+      ],
+      "min_magnitude": 3.0,
+      "scope": {
+        "near": [
+          {
+            "name": "Denver",
+            "lat": 39.74,
+            "lon": -104.99,
+            "miles": 200
+          }
+        ]
+      },
+      "action": "push",
+      "priority": 3,
+      "on_update": "significant"
+    },
+    {
+      "name": "Big earthquakes worldwide (M6.5+)",
+      "events": [
+        "Earthquake"
+      ],
+      "min_magnitude": 6.5,
+      "scope": {
+        "offices": [
+          "USGS"
+        ]
+      },
+      "action": "push",
+      "priority": 3,
+      "on_update": "significant"
+    },
+    {
+      "name": "Earthquakes with a tsunami flag or PAGER orange/red",
+      "kinds": [
+        "Earthquake"
+      ],
+      "tags_any": [
+        "tsunami",
+        "pager-orange",
+        "pager-red"
+      ],
+      "scope": {
+        "offices": [
+          "USGS"
+        ]
+      },
+      "action": "push",
+      "priority": 4,
+      "on_update": "significant"
+    }
+  ]
+}

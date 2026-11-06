@@ -53,13 +53,25 @@ RISK_COLORS = {"TSTM": "#c1e9c1", "MRGL": "#66a366", "SLGT": "#ffe066", "ENH": "
                "HIGH": "#ee99ee"}
 
 
+def quake_radius(mag) -> int:
+    return int(max(5, min(22, 4 + 3 * (float(mag or 0) - 2.5))))
+
+
 def available() -> bool:
     return Image is not None
+
+
+def quake_color(mag) -> str:
+    """Earthquake markers, by magnitude: yellow under 4 through dark red at 7 and up."""
+    m = float(mag or 0)
+    return "#8b0000" if m >= 7 else "#e0301e" if m >= 6 else "#ff7f0e" if m >= 5 else "#f2c12e" if m >= 4 else "#e8e07a"
 
 
 def color_for(a: Alert) -> str:
     if "emergency" in a.tag_set:
         return "#ff2e63"
+    if a.source == "usgs":
+        return quake_color(a.params.get("mag"))
     if a.source == "spc" and a.kind == "Outlook" and a.params.get("risk") in RISK_COLORS:
         return RISK_COLORS[a.params["risk"]]
     if a.source == "spc" and a.kind == "Outlook" and (a.params.get("risk_colors") or [""])[-1] not in ("", "#000000"):
@@ -188,7 +200,7 @@ class Renderer:
     def render(self, a: Alert, geom: dict) -> bytes:
         map_h = HEIGHT - HEADER
         # A storm center with a short track would otherwise zoom to street level.
-        z, cx, cy = pick_view(geom, WIDTH, map_h, zmax=6 if a.source == "nhc" else 10)
+        z, cx, cy = pick_view(geom, WIDTH, map_h, zmax=6 if a.source in ("nhc", "usgs") else 10)
         base, left, top = self._basemap(z, cx, cy, WIDTH, map_h)
         overlay = Image.new("RGBA", (WIDTH, map_h), (0, 0, 0, 0))
         d = ImageDraw.Draw(overlay)
@@ -216,7 +228,8 @@ class Renderer:
                 d.line([px(p) for p in g["coordinates"]], fill=rgb + (255,), width=width)
             if t == "Point":
                 x, y = px(g["coordinates"])
-                d.ellipse([x - 7, y - 7, x + 7, y + 7], fill=rgb + (200,), outline=rgb + (255,), width=2)
+                r = quake_radius(a.params.get("mag")) if a.source == "usgs" else 7
+                d.ellipse([x - r, y - r, x + r, y + r], fill=rgb + (200,), outline=(20, 20, 20, 255) if a.source == "usgs" else rgb + (255,), width=2)
 
         color = color_for(a)
         if a.source == "spc" and a.kind == "Outlook":
@@ -235,7 +248,7 @@ class Renderer:
         img.paste(Image.alpha_composite(base.convert("RGBA"), overlay).convert("RGB"), (0, HEADER))
         hd = ImageDraw.Draw(img)
         hd.rectangle([0, 0, 6, HEADER], fill=_rgb(color))
-        title = a.headline if a.source in ("nhc", "spc", "swpc") and a.headline else a.event
+        title = a.headline if a.source in ("nhc", "spc", "swpc", "usgs") and a.headline else a.event
         office = a.office or a.sender_name
         self._text(hd, (14, HEADER // 2), f"{title} · {office}"[:70], (236, 239, 244), self._font(17))
         attrib = "© OpenStreetMap" + (" © CARTO" if self.map_key else "")
